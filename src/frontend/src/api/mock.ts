@@ -1,8 +1,9 @@
-import { MOCK_POIS } from './mockData.ts'
+import { MOCK_ACCOMMODATIONS, MOCK_POIS } from './mockData.ts'
 import type {
   ItineraryEntry,
   ItineraryRequest,
   ItineraryResult,
+  PlaceSearchResult,
   Poi,
   TripConfig,
 } from './types.ts'
@@ -12,6 +13,29 @@ import type {
 // real itineraries come from the optimization engine via the backend.
 
 const MOCK_TRAVEL_MINUTES = 15
+
+// Mirrors GET /api/places/search?city=&q=. The mock ignores the city because
+// every mock place is in Toronto.
+export async function searchPlaces(
+  _city: string,
+  query: string,
+): Promise<PlaceSearchResult[]> {
+  const q = query.trim().toLowerCase()
+  if (!q) {
+    return []
+  }
+  const places: PlaceSearchResult[] = [
+    ...MOCK_ACCOMMODATIONS,
+    ...MOCK_POIS.map((poi) => ({
+      place_id: poi.placeId,
+      name: poi.name,
+      kind: poi.category,
+      lat: poi.location.lat,
+      lng: poi.location.lng,
+    })),
+  ]
+  return places.filter((place) => place.name.toLowerCase().includes(q))
+}
 
 export async function fetchCandidatePois(_trip: TripConfig): Promise<Poi[]> {
   return MOCK_POIS
@@ -30,17 +54,16 @@ export async function generateItinerary(
     throw new Error('Unknown place ID in request.')
   }
 
-  const dayEnd = toMinutes(trip.dayEndTime)
   const entries: ItineraryEntry[] = []
-  let now = toMinutes(trip.dayStartTime)
-  let previousPlaceId = trip.accommodation.placeId ?? 'accommodation'
+  let now = trip.day_start
+  let previousPlaceId = 'accommodation'
 
   for (const poi of pois as Poi[]) {
     entries.push({
       kind: 'travel',
       fromPlaceId: previousPlaceId,
       toPlaceId: poi.placeId,
-      mode: trip.transportMode,
+      mode: trip.transport_mode,
       startTime: toTime(now),
       endTime: toTime(now + MOCK_TRAVEL_MINUTES),
     })
@@ -55,22 +78,17 @@ export async function generateItinerary(
     previousPlaceId = poi.placeId
   }
 
-  if (now > dayEnd) {
+  if (now > trip.day_end) {
     return {
       status: 'infeasible',
-      reason: `The selected places need until ${toTime(now)}, but the day ends at ${trip.dayEndTime}.`,
+      reason: `The selected places need until ${toTime(now)}, but the day ends at ${toTime(trip.day_end)}.`,
     }
   }
 
   return {
     status: 'ok',
-    itinerary: { days: [{ date: trip.startDate, entries }] },
+    itinerary: { days: [{ date: trip.dates[0], entries }] },
   }
-}
-
-function toMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number)
-  return hours * 60 + minutes
 }
 
 function toTime(totalMinutes: number): string {
