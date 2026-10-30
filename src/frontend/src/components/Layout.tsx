@@ -9,7 +9,7 @@ import {
   type IconName,
 } from '@blueprintjs/core'
 import type { ReactNode } from 'react'
-import { Link, NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet, useMatch } from 'react-router'
 
 // A router link styled as a minimal Blueprint button, so it keeps real link
 // behaviour (middle-click, copy address) and gets the active highlight.
@@ -41,13 +41,18 @@ function NavButton({
 }
 
 function Layout() {
+  // The landing page lays out its own full-width sections.
+  const isHome = useMatch('/') !== null
+
   return (
     <>
-      <Navbar className="site-navbar">
+      <Navbar className={`site-navbar ${Classes.DARK}`}>
         <NavbarGroup align={Alignment.START}>
           <NavbarHeading>
             <Link to="/" className="site-title">
-              <Icon icon="map" />
+              <span className="site-logo">
+                <Icon icon="map-marker" size={14} />
+              </span>
               Itinerary Map
             </Link>
           </NavbarHeading>
@@ -62,7 +67,7 @@ function Layout() {
           </nav>
         </NavbarGroup>
       </Navbar>
-      <main className="page">
+      <main className={isHome ? 'landing' : 'page'}>
         <Outlet />
       </main>
     </>
