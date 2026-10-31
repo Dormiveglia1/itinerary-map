@@ -37,8 +37,12 @@ export async function searchPlaces(
   return places.filter((place) => place.name.toLowerCase().includes(q))
 }
 
-export async function fetchCandidatePois(_trip: TripConfig): Promise<Poi[]> {
-  return MOCK_POIS
+// Filters by price like the backend's POI filtering (SRS §8). Places with no
+// price level are kept, since that usually means they're free.
+export async function fetchCandidatePois(trip: TripConfig): Promise<Poi[]> {
+  return MOCK_POIS.filter(
+    (poi) => poi.priceLevel === null || poi.priceLevel <= trip.max_price_level,
+  )
 }
 
 export async function generateItinerary(
