@@ -8,7 +8,8 @@ import {
 
 // Kept in sessionStorage so a page refresh mid-flow doesn't lose the trip.
 // There is no account or saved-trip storage in the PoC.
-export const TRIP_STORAGE_KEY = 'itinerary-map:trip'
+// Versioned so state saved in an older shape is ignored instead of misread.
+export const TRIP_STORAGE_KEY = 'itinerary-map:trip:v2'
 
 function loadState(): TripState {
   try {
@@ -39,7 +40,8 @@ export function TripProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       // A new trip invalidates places chosen for the previous one.
-      setTrip: (trip) => setState({ trip, selectedPoiIds: [] }),
+      setTrip: (trip, accommodation) =>
+        setState({ trip, accommodation, selectedPoiIds: [] }),
       setSelectedPoiIds: (selectedPoiIds) =>
         setState((prev) => ({ ...prev, selectedPoiIds })),
       reset: () => setState(EMPTY_TRIP_STATE),

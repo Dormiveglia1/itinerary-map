@@ -1,8 +1,9 @@
-import { MOCK_POIS } from './mockData.ts'
+import { MOCK_ACCOMMODATIONS, MOCK_POIS } from './mockData.ts'
 import type {
   ItineraryEntry,
   ItineraryRequest,
   ItineraryResult,
+  PlaceSearchResult,
   Poi,
   TripConfig,
 } from './types.ts'
@@ -13,8 +14,35 @@ import type {
 
 const MOCK_TRAVEL_MINUTES = 15
 
-export async function fetchCandidatePois(_trip: TripConfig): Promise<Poi[]> {
-  return MOCK_POIS
+// Mirrors GET /api/places/search?city=&q=. The mock ignores the city because
+// every mock place is in Toronto.
+export async function searchPlaces(
+  _city: string,
+  query: string,
+): Promise<PlaceSearchResult[]> {
+  const q = query.trim().toLowerCase()
+  if (!q) {
+    return []
+  }
+  const places: PlaceSearchResult[] = [
+    ...MOCK_ACCOMMODATIONS,
+    ...MOCK_POIS.map((poi) => ({
+      place_id: poi.placeId,
+      name: poi.name,
+      kind: poi.category,
+      lat: poi.location.lat,
+      lng: poi.location.lng,
+    })),
+  ]
+  return places.filter((place) => place.name.toLowerCase().includes(q))
+}
+
+// Filters by price like the backend's POI filtering (SRS §8). Places with no
+// price level are kept, since that usually means they're free.
+export async function fetchCandidatePois(trip: TripConfig): Promise<Poi[]> {
+  return MOCK_POIS.filter(
+    (poi) => poi.priceLevel === null || poi.priceLevel <= trip.max_price_level,
+  )
 }
 
 export async function generateItinerary(
@@ -30,17 +58,16 @@ export async function generateItinerary(
     throw new Error('Unknown place ID in request.')
   }
 
-  const dayEnd = toMinutes(trip.dayEndTime)
   const entries: ItineraryEntry[] = []
-  let now = toMinutes(trip.dayStartTime)
-  let previousPlaceId = trip.accommodation.placeId ?? 'accommodation'
+  let now = trip.day_start
+  let previousPlaceId = 'accommodation'
 
   for (const poi of pois as Poi[]) {
     entries.push({
       kind: 'travel',
       fromPlaceId: previousPlaceId,
       toPlaceId: poi.placeId,
-      mode: trip.transportMode,
+      mode: trip.transport_mode,
       startTime: toTime(now),
       endTime: toTime(now + MOCK_TRAVEL_MINUTES),
     })
@@ -55,22 +82,17 @@ export async function generateItinerary(
     previousPlaceId = poi.placeId
   }
 
-  if (now > dayEnd) {
+  if (now > trip.day_end) {
     return {
       status: 'infeasible',
-      reason: `The selected places need until ${toTime(now)}, but the day ends at ${trip.dayEndTime}.`,
+      reason: `The selected places need until ${toTime(now)}, but the day ends at ${toTime(trip.day_end)}.`,
     }
   }
 
   return {
     status: 'ok',
-    itinerary: { days: [{ date: trip.startDate, entries }] },
+    itinerary: { days: [{ date: trip.dates[0], entries }] },
   }
-}
-
-function toMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number)
-  return hours * 60 + minutes
 }
 
 function toTime(totalMinutes: number): string {

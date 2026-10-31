@@ -1,19 +1,73 @@
-import { Link, NavLink, Outlet } from 'react-router'
+import {
+  Alignment,
+  Classes,
+  Icon,
+  Navbar,
+  NavbarDivider,
+  NavbarGroup,
+  NavbarHeading,
+  type IconName,
+} from '@blueprintjs/core'
+import type { ReactNode } from 'react'
+import { Link, NavLink, Outlet, useMatch } from 'react-router'
+
+// A router link styled as a minimal Blueprint button, so it keeps real link
+// behaviour (middle-click, copy address) and gets the active highlight.
+function NavButton({
+  to,
+  icon,
+  end,
+  children,
+}: {
+  to: string
+  icon: IconName
+  end?: boolean
+  children: ReactNode
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        [Classes.BUTTON, Classes.MINIMAL, isActive && Classes.ACTIVE]
+          .filter(Boolean)
+          .join(' ')
+      }
+    >
+      <Icon icon={icon} />
+      <span className={Classes.BUTTON_TEXT}>{children}</span>
+    </NavLink>
+  )
+}
 
 function Layout() {
+  // The landing page lays out its own full-width sections.
+  const isHome = useMatch('/') !== null
+
   return (
     <>
-      <header className="site-header">
-        <Link to="/" className="site-title">
-          Itinerary Map
-        </Link>
-        <nav aria-label="Main">
-          <NavLink to="/plan" end>
-            Plan a trip
-          </NavLink>
-        </nav>
-      </header>
-      <main className="page">
+      <Navbar className={`site-navbar ${Classes.DARK}`}>
+        <NavbarGroup align={Alignment.START}>
+          <NavbarHeading>
+            <Link to="/" className="site-title">
+              <span className="site-logo">
+                <Icon icon="map-marker" size={14} />
+              </span>
+              Itinerary Map
+            </Link>
+          </NavbarHeading>
+          <NavbarDivider />
+          <nav aria-label="Main" className="site-nav">
+            <NavButton to="/" icon="home" end>
+              Home
+            </NavButton>
+            <NavButton to="/plan" icon="path-search">
+              Plan a trip
+            </NavButton>
+          </nav>
+        </NavbarGroup>
+      </Navbar>
+      <main className={isHome ? 'landing' : 'page'}>
         <Outlet />
       </main>
     </>
