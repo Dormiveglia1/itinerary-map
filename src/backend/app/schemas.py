@@ -68,7 +68,7 @@ class TripIn(BaseModel):
 
 
 class Selection(BaseModel):
-    place_id: str = Field(min_length=1)
+    place_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,256}$")  # interpolated into the Place Details URL path
     priority: int = Field(ge=1, le=10)
     visit_minutes: int | None = Field(default=None, ge=0, le=1440)
 

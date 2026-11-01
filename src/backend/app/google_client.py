@@ -58,7 +58,13 @@ def search_text(text_query: str, max_results: int = 10) -> list[dict]:
 def place_details(place_id: str) -> dict | None:
     """Returns None if Google does not recognise the place id."""
     resp = _request("GET", PLACE_DETAILS_URL.format(place_id=place_id), DETAILS_FIELDS)
-    if resp.status_code in (400, 404):
+    if resp.status_code == 404:
+        return None
+    if resp.status_code == 400:
+        details = resp.json().get("error", {}).get("details", [])
+        reasons = {d.get("reason") for d in details}
+        if "API_KEY_INVALID" in reasons:
+            raise APIError(500, "server_misconfigured", "GOOGLE_MAPS_API_KEY is invalid.")
         return None
     if resp.status_code != 200:
         raise GoogleAPIError("google_error", f"Google Place Details failed ({resp.status_code}).")
