@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query
 
 from . import converters, google_client, optimizer_bridge
+from .errors import APIError
 from .google_client import ACCOMMODATION_ID
 from .schemas import GenerateRequest, PlaceSearchResult
 
@@ -53,8 +54,7 @@ def generate_itinerary(req: GenerateRequest):
     pois, excluded = [], []
     for sel, place in zip(req.selections, places):
         if place is None:
-            excluded.append({"poi_id": sel.place_id, "name": "", "reason": "missing_data"})
-            continue
+            raise APIError(400, "invalid_input", f"selections: unknown place_id {sel.place_id!r}")
         poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace)
         if poi:
             pois.append(poi)
@@ -70,7 +70,7 @@ def generate_itinerary(req: GenerateRequest):
             "days": [],
             "unscheduled": excluded,
             "violations": [{"code": "no_usable_places",
-                            "message": "None of the selected places have enough information to plan a visit."}],
+                            "message": "None of the selected places can be visited on the trip dates."}],
         }
 
     nodes = [{"id": ACCOMMODATION_ID, **trip["accommodation"]}] + \

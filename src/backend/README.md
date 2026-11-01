@@ -46,7 +46,8 @@ Candidate places for the user to pick from (`limit` 1–20, default 10). Closed 
 - 1–20 selections, each `place_id` once, `priority` 1–10.
 
 Returns the contract `ItineraryResult` with `name` added to each activity. Places the backend could not use
-(no opening hours, closed, unknown id) appear in `unscheduled` with reason `missing_data` / `closed_on_trip_dates`.
+appear in `unscheduled`: closed or no opening hours -> `closed_on_trip_dates`, no location -> `unreachable`.
+A `place_id` Google does not recognise is invalid input (400).
 
 ### Errors
 | HTTP | When | Body |

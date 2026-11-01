@@ -118,10 +118,10 @@ def to_poi(place: dict, dates: list[str], priority: int,
     if place.get("businessStatus", "OPERATIONAL") != "OPERATIONAL":
         return None, "closed_on_trip_dates"
     if "location" not in place:
-        return None, "missing_data"
+        return None, "unreachable"
     hours = resolve_opening_hours(place, dates)
-    if hours is None:
-        return None, "missing_data"
+    if hours is None:  # contract: a missing date means closed
+        return None, "closed_on_trip_dates"
     kind = kind_of(place)
     return {
         "id": place["id"],

@@ -128,13 +128,18 @@ def test_generate_passes_contract_inputs_to_optimizer(captured):
 
 def test_generate_adds_names_and_merges_excluded(captured):
     r = gen([{"place_id": "ROM", "priority": 8}, {"place_id": "NOH", "priority": 5},
-             {"place_id": "OLD", "priority": 5}, {"place_id": "BOGUS", "priority": 5}])
+             {"place_id": "OLD", "priority": 5}])
     body = r.json()
     assert r.status_code == 200 and body["status"] == "ok"
     assert body["days"][0]["activities"][0]["name"] == "Royal Ontario Museum"
     reasons = {u["poi_id"]: u["reason"] for u in body["unscheduled"]}
-    assert reasons == {"NOH": "missing_data", "OLD": "closed_on_trip_dates", "BOGUS": "missing_data"}
+    assert reasons == {"NOH": "closed_on_trip_dates", "OLD": "closed_on_trip_dates"}
     assert [p["id"] for p in captured["pois"]] == ["ROM"]
+
+
+def test_generate_unknown_place_id_is_400(captured):
+    r = gen([{"place_id": "ROM", "priority": 8}, {"place_id": "BOGUS", "priority": 5}])
+    assert r.status_code == 400 and r.json()["error"] == "invalid_input"
 
 
 def test_generate_all_unusable_is_infeasible_200(captured):
