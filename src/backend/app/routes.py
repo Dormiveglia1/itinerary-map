@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Query
 
@@ -46,11 +47,13 @@ def generate_itinerary(req: GenerateRequest):
     optimizer_bridge.ensure_available()  # before any (billed) Google calls
     trip = req.trip.to_contract()
 
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        places = list(pool.map(lambda sel: google_client.place_details(sel.place_id), req.selections))
+
     pois, excluded = [], []
-    for sel in req.selections:
-        place = google_client.place_details(sel.place_id)
+    for sel, place in zip(req.selections, places):
         if place is None:
-            excluded.append({"poi_id": sel.place_id, "reason": "missing_data"})
+            excluded.append({"poi_id": sel.place_id, "name": "", "reason": "missing_data"})
             continue
         poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace)
         if poi:
