@@ -2,7 +2,6 @@ import type {
   MealWindows,
   Pace,
   PlaceSearchResult,
-  PriceLevel,
   TransportMode,
   TripConfig,
 } from '../api/index.ts'
@@ -21,12 +20,7 @@ export const DEFAULT_MEAL_WINDOWS: MealWindows = {
   dinner: [1050, 1200],
 }
 
-export const PRICE_LEVEL_LABELS: Record<PriceLevel, string> = {
-  1: 'Inexpensive',
-  2: 'Moderate',
-  3: 'Expensive',
-  4: 'Very expensive',
-}
+export const DEFAULT_BUDGET = 150
 
 // Form state, in the shapes Blueprint's inputs work with. Times of day are
 // Dates whose date part is ignored.
@@ -35,7 +29,8 @@ export interface TripFormValues {
   dateRange: [Date | null, Date | null]
   dayStart: Date
   dayEnd: Date
-  maxPriceLevel: PriceLevel
+  // CAD per person. NaN while the field is empty.
+  budget: number
   transportMode: TransportMode
   pace: Pace
   accommodation: PlaceSearchResult | null
@@ -50,9 +45,9 @@ export function defaultTripFormValues(): TripFormValues {
     dateRange: [null, null],
     dayStart: timeFromMinutes(540),
     dayEnd: timeFromMinutes(1260),
-    maxPriceLevel: 2,
+    budget: DEFAULT_BUDGET,
     transportMode: 'walk',
-    pace: 'moderate',
+    pace: 'normal',
     accommodation: null,
     includeMeals: true,
   }
@@ -72,7 +67,7 @@ export function tripFormValuesFrom(
     ],
     dayStart: timeFromMinutes(trip.day_start),
     dayEnd: timeFromMinutes(trip.day_end),
-    maxPriceLevel: trip.max_price_level,
+    budget: trip.budget,
     transportMode: trip.transport_mode,
     pace: trip.pace,
     accommodation,
@@ -99,6 +94,10 @@ export function validateTripForm(values: TripFormValues): TripFormErrors {
     errors.accommodation = 'Choose where you are staying.'
   }
 
+  if (!Number.isFinite(values.budget) || values.budget < 0) {
+    errors.budget = 'Enter a budget of $0 or more.'
+  }
+
   return errors
 }
 
@@ -116,7 +115,7 @@ export function toTripConfig(values: TripFormValues): TripConfig {
     dates: datesBetween(start, end).map(isoFromDate),
     day_start: minutesFromTime(values.dayStart),
     day_end: minutesFromTime(values.dayEnd),
-    max_price_level: values.maxPriceLevel,
+    budget: values.budget,
     transport_mode: values.transportMode,
     pace: values.pace,
     accommodation: {

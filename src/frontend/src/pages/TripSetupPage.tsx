@@ -5,16 +5,16 @@ import {
   FormGroup,
   H1,
   HTMLSelect,
+  NumericInput,
   SegmentedControl,
   Switch,
 } from '@blueprintjs/core'
 import { DateRangeInput, TimePicker, TimePrecision } from '@blueprintjs/datetime'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import type { Pace, PriceLevel, TransportMode } from '../api/index.ts'
+import type { Pace, TransportMode } from '../api/index.ts'
 import PlaceSuggest from '../components/PlaceSuggest.tsx'
 import {
-  PRICE_LEVEL_LABELS,
   SUPPORTED_CITIES,
   defaultTripFormValues,
   toTripConfig,
@@ -32,15 +32,9 @@ const TRANSPORT_OPTIONS = [
 
 const PACE_OPTIONS = [
   { value: 'relaxed', label: 'Relaxed' },
-  { value: 'moderate', label: 'Moderate' },
+  { value: 'normal', label: 'Moderate' },
   { value: 'packed', label: 'Packed' },
 ]
-
-const PRICE_LEVELS: PriceLevel[] = [1, 2, 3, 4]
-const PRICE_OPTIONS = PRICE_LEVELS.map((level) => ({
-  value: String(level),
-  label: '$'.repeat(level),
-}))
 
 function today(): Date {
   const now = new Date()
@@ -196,16 +190,25 @@ function TripSetupPage() {
           </FormGroup>
 
           <FormGroup
-            label="Price range"
-            helperText={`Up to ${'$'.repeat(values.maxPriceLevel)}: ${PRICE_LEVEL_LABELS[values.maxPriceLevel].toLowerCase()}. Places above this level are left out.`}
+            label="Budget (CAD)"
+            labelFor="trip-budget"
+            helperText={
+              errors.budget ??
+              "Per person. Meals are estimated from each restaurant's price level; admission prices aren't available yet, so attractions count as free."
+            }
+            intent={errors.budget ? 'danger' : 'none'}
           >
-            <SegmentedControl
+            <NumericInput
+              id="trip-budget"
               fill
-              options={PRICE_OPTIONS}
-              value={String(values.maxPriceLevel)}
-              onValueChange={(v) =>
-                update('maxPriceLevel', Number(v) as PriceLevel)
-              }
+              leftIcon="dollar"
+              min={0}
+              majorStepSize={50}
+              stepSize={10}
+              minorStepSize={1}
+              value={Number.isNaN(values.budget) ? '' : values.budget}
+              onValueChange={(value) => update('budget', value)}
+              intent={errors.budget ? 'danger' : 'none'}
             />
           </FormGroup>
 

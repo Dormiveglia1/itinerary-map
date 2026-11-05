@@ -5,30 +5,42 @@ import {
   Icon,
   InputGroup,
   NonIdealState,
-  SegmentedControl,
+  Slider,
   type IconName,
 } from '@blueprintjs/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
-  fetchCandidatePois,
-  type Poi,
+  ApiError,
+  searchPlaces,
+  type PlaceSearchResult,
   type PoiKind,
   type TransportMode,
 } from '../api/index.ts'
 import {
+  MAX_PRIORITY,
   MAX_SELECTED_POIS,
+  MIN_PRIORITY,
   RECOMMENDED_MIN_POIS,
-  formatDuration,
   formatTimeOfDay,
+  isSelected,
+  priorityLabel,
   toggleSelection,
-  totalVisitMinutes,
-  validSelection,
+  withPriority,
 } from '../trip/placeSelection.ts'
-import { PRICE_LEVEL_LABELS } from '../trip/tripForm.ts'
 import { useTrip } from '../trip/useTrip.ts'
 
-type CategoryFilter = 'all' | PoiKind
+const MIN_QUERY_LENGTH = 2
+
+// One-tap searches, so the page is useful before the traveller types anything.
+const SEARCH_SHORTCUTS: { label: string; query: string; icon: IconName }[] = [
+  { label: 'Top sights', query: 'tourist attractions', icon: 'star' },
+  { label: 'Museums', query: 'museums', icon: 'office' },
+  { label: 'Parks', query: 'parks', icon: 'tree' },
+  { label: 'Galleries', query: 'art galleries', icon: 'media' },
+  { label: 'Restaurants', query: 'restaurants', icon: 'glass' },
+  { label: 'Cafes', query: 'cafes', icon: 'shop' },
+]
 
 const CATEGORY_ICONS: Record<PoiKind, IconName> = {
   attraction: 'camera',
@@ -58,12 +70,12 @@ function formatTripDate(iso: string): string {
 }
 
 function PlaceCard({
-  poi,
+  place,
   selected,
   disabled,
   onToggle,
 }: {
-  poi: Poi
+  place: PlaceSearchResult
   selected: boolean
   disabled: boolean
   onToggle: () => void
@@ -77,22 +89,12 @@ function PlaceCard({
       title={disabled ? `You can choose up to ${MAX_SELECTED_POIS} places.` : undefined}
       onClick={onToggle}
     >
-      <span className={`place-card-icon place-card-icon-${poi.category}`}>
-        <Icon icon={CATEGORY_ICONS[poi.category]} size={18} />
+      <span className={`place-card-icon place-card-icon-${place.kind}`}>
+        <Icon icon={CATEGORY_ICONS[place.kind]} size={18} />
       </span>
       <span className="place-card-body">
-        <span className="place-card-name">{poi.name}</span>
-        <span className="place-card-meta">
-          <span>{CATEGORY_LABELS[poi.category]}</span>
-          <span>
-            <Icon icon="time" size={12} /> {formatDuration(poi.visitDurationMinutes)}
-          </span>
-          {poi.priceLevel !== null && (
-            <span title={PRICE_LEVEL_LABELS[poi.priceLevel]}>
-              {'$'.repeat(poi.priceLevel)}
-            </span>
-          )}
-        </span>
+        <span className="place-card-name">{place.name}</span>
+        <span className="place-card-meta">{CATEGORY_LABELS[place.kind]}</span>
       </span>
       <span className="place-card-check" aria-hidden="true">
         <Icon icon={selected ? 'tick' : 'plus'} size={14} />
@@ -101,36 +103,41 @@ function PlaceCard({
   )
 }
 
-// SRS §16: choose ~5–10 candidate places in one city for a one-day itinerary.
+// SRS §16: choose ~5–10 places in one city for a one-day itinerary.
 function ChoosePlacesPage() {
-  const { trip, accommodation, selectedPoiIds, setSelectedPoiIds } = useTrip()
+  const { trip, accommodation, selections, setSelections } = useTrip()
   const navigate = useNavigate()
-  const [attempt, setAttempt] = useState(0)
-  // Tagged with the attempt it answers, so a retry shows as loading.
+  const [input, setInput] = useState('')
+  // `id` makes repeating the same search (e.g. retrying) run it again.
+  const [search, setSearch] = useState<{ id: number; query: string } | null>(null)
+  // Tagged with the search it answers, so a new search shows as loading.
   const [result, setResult] = useState<{
-    attempt: number
-    pois: Poi[] | null
+    id: number
+    places: PlaceSearchResult[] | null
+    error: string | null
   } | null>(null)
-  const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<CategoryFilter>('all')
 
   useEffect(() => {
-    if (!trip) {
+    if (!trip || !search) {
       return
     }
-    let cancelled = false
-    fetchCandidatePois(trip).then(
-      (pois) => {
-        if (!cancelled) setResult({ attempt, pois })
-      },
-      () => {
-        if (!cancelled) setResult({ attempt, pois: null })
+    const controller = new AbortController()
+    searchPlaces(trip.city, search.query, controller.signal).then(
+      (places) => setResult({ id: search.id, places, error: null }),
+      (error: unknown) => {
+        if (controller.signal.aborted) return
+        setResult({
+          id: search.id,
+          places: null,
+          error:
+            error instanceof ApiError
+              ? error.message
+              : 'Something went wrong searching for places.',
+        })
       },
     )
-    return () => {
-      cancelled = true
-    }
-  }, [trip, attempt])
+    return () => controller.abort()
+  }, [trip, search])
 
   if (!trip) {
     return (
@@ -147,32 +154,30 @@ function ChoosePlacesPage() {
     )
   }
 
-  const loading = result === null || result.attempt !== attempt
-  const candidates = (!loading && result.pois) || []
-  const failed = !loading && result.pois === null
+  function runSearch(query: string) {
+    setSearch((prev) => ({ id: (prev?.id ?? 0) + 1, query }))
+  }
 
-  const selected = validSelection(selectedPoiIds, candidates)
-  const atCap = selected.length >= MAX_SELECTED_POIS
-  const visitMinutes = totalVisitMinutes(selected, candidates)
-  const dayMinutes = trip.day_end - trip.day_start
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    const query = input.trim()
+    if (query.length >= MIN_QUERY_LENGTH) {
+      runSearch(query)
+    }
+  }
 
-  const q = query.trim().toLowerCase()
-  const visible = candidates.filter(
-    (poi) =>
-      (category === 'all' || poi.category === category) &&
-      poi.name.toLowerCase().includes(q),
-  )
-  const countOf = (kind: PoiKind) =>
-    candidates.filter((poi) => poi.category === kind).length
-
+  const loading = search !== null && result?.id !== search.id
+  const places = (!loading && result?.places) || []
+  const error = !loading ? result?.error : null
+  const atCap = selections.length >= MAX_SELECTED_POIS
   const transport = TRANSPORT_SUMMARY[trip.transport_mode]
 
   return (
     <>
       <H1>Choose places</H1>
       <p className="page-lead">
-        Pick the places you'd like to visit. We'll work out the order and
-        timing.
+        Find the places you'd like to visit and tell us how much each one
+        matters. We'll work out the order and timing.
       </p>
 
       <div className="trip-summary">
@@ -199,38 +204,67 @@ function ChoosePlacesPage() {
             <Icon icon={transport.icon} size={14} />
             {transport.label}
           </li>
+          <li>
+            <Icon icon="bank-account" size={14} />
+            {trip.budget.toLocaleString(undefined, {
+              style: 'currency',
+              currency: 'CAD',
+              currencyDisplay: 'narrowSymbol',
+              maximumFractionDigits: 0,
+            })}{' '}
+            budget
+          </li>
         </ul>
         <Link to="/plan" className="trip-summary-edit">
           <Icon icon="edit" size={12} /> Edit trip
         </Link>
       </div>
 
-      <div className="places-toolbar">
+      <form className="places-search" onSubmit={handleSubmit} role="search">
         <InputGroup
           leftIcon="search"
-          placeholder="Filter places"
-          aria-label="Filter places by name"
-          value={query}
-          onValueChange={setQuery}
-          className="places-search"
+          placeholder={`Search places in ${trip.city}`}
+          aria-label="Search places"
+          value={input}
+          onValueChange={setInput}
+          size="large"
+          rightElement={
+            <Button
+              type="submit"
+              intent="primary"
+              text="Search"
+              disabled={input.trim().length < MIN_QUERY_LENGTH}
+            />
+          }
         />
-        <SegmentedControl
-          options={[
-            { value: 'all', label: `All (${candidates.length})` },
-            { value: 'attraction', label: `Attractions (${countOf('attraction')})` },
-            { value: 'restaurant', label: `Restaurants (${countOf('restaurant')})` },
-          ]}
-          value={category}
-          onValueChange={(v) => setCategory(v as CategoryFilter)}
-        />
+      </form>
+      <div className="search-chips" aria-label="Suggested searches">
+        {SEARCH_SHORTCUTS.map((shortcut) => {
+          const active = search?.query === shortcut.query
+          return (
+            <button
+              key={shortcut.query}
+              type="button"
+              className={`search-chip${active ? ' search-chip-active' : ''}`}
+              aria-pressed={active}
+              onClick={() => {
+                setInput('')
+                runSearch(shortcut.query)
+              }}
+            >
+              <Icon icon={shortcut.icon} size={12} />
+              {shortcut.label}
+            </button>
+          )
+        })}
       </div>
 
-      {failed ? (
+      {search === null ? (
         <NonIdealState
-          icon="error"
-          title="Couldn't load places"
-          description="Something went wrong fetching places for this trip."
-          action={<Button text="Try again" onClick={() => setAttempt((n) => n + 1)} />}
+          className="places-empty"
+          icon="geosearch"
+          title="Find places to visit"
+          description="Search by name or type, or pick one of the suggestions above."
         />
       ) : loading ? (
         <div className="places-grid" aria-busy="true">
@@ -238,61 +272,97 @@ function ChoosePlacesPage() {
             <div key={i} className={`place-card ${Classes.SKELETON}`} />
           ))}
         </div>
-      ) : visible.length === 0 ? (
+      ) : error ? (
         <NonIdealState
+          className="places-empty"
+          icon="error"
+          title="Couldn't search places"
+          description={error}
+          action={<Button text="Try again" onClick={() => runSearch(search.query)} />}
+        />
+      ) : places.length === 0 ? (
+        <NonIdealState
+          className="places-empty"
           icon="search"
-          title="No matching places"
-          description={
-            candidates.length === 0
-              ? 'No places fit this trip. Try a higher price range.'
-              : 'Try a different name or category.'
-          }
+          title="No places found"
+          description="Try a different search."
         />
       ) : (
         <div className="places-grid">
-          {visible.map((poi) => {
-            const isSelected = selected.includes(poi.placeId)
+          {places.map((place) => {
+            const selected = isSelected(selections, place.place_id)
             return (
               <PlaceCard
-                key={poi.placeId}
-                poi={poi}
-                selected={isSelected}
-                disabled={atCap && !isSelected}
-                onToggle={() =>
-                  setSelectedPoiIds(toggleSelection(selected, poi.placeId))
-                }
+                key={place.place_id}
+                place={place}
+                selected={selected}
+                disabled={atCap && !selected}
+                onToggle={() => setSelections(toggleSelection(selections, place))}
               />
             )
           })}
         </div>
       )}
 
+      {selections.length > 0 && (
+        <section className="your-places" aria-labelledby="your-places-title">
+          <h2 id="your-places-title">Your places</h2>
+          <p className="your-places-lead">
+            Higher priority places are kept first if not everything fits.
+          </p>
+          <ol>
+            {selections.map(({ place, priority }) => (
+              <li key={place.place_id} className="your-place">
+                <span className={`place-card-icon place-card-icon-${place.kind}`}>
+                  <Icon icon={CATEGORY_ICONS[place.kind]} size={16} />
+                </span>
+                <div className="your-place-name">
+                  <strong>{place.name}</strong>
+                  <small>{CATEGORY_LABELS[place.kind]}</small>
+                </div>
+                <div className="your-place-priority">
+                  <span className="your-place-priority-label">
+                    Priority <strong>{priority}</strong> · {priorityLabel(priority)}
+                  </span>
+                  <Slider
+                    min={MIN_PRIORITY}
+                    max={MAX_PRIORITY}
+                    stepSize={1}
+                    labelValues={[MIN_PRIORITY, 5, MAX_PRIORITY]}
+                    value={priority}
+                    onChange={(value) =>
+                      setSelections(withPriority(selections, place.place_id, value))
+                    }
+                    handleHtmlProps={{ 'aria-label': `Priority for ${place.name}` }}
+                  />
+                </div>
+                <Button
+                  variant="minimal"
+                  icon="cross"
+                  aria-label={`Remove ${place.name}`}
+                  onClick={() => setSelections(toggleSelection(selections, place))}
+                />
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       <div className="selection-bar">
         <div className="selection-bar-status" aria-live="polite">
           <strong>
-            {selected.length} of {MAX_SELECTED_POIS} places selected
+            {selections.length} of {MAX_SELECTED_POIS} places selected
           </strong>
-          <span
-            className={
-              visitMinutes > dayMinutes ? 'selection-bar-warning' : undefined
-            }
-          >
-            {selected.length === 0
+          <span>
+            {selections.length < RECOMMENDED_MIN_POIS
               ? `Pick ${RECOMMENDED_MIN_POIS}–${MAX_SELECTED_POIS} places for a full day.`
-              : visitMinutes > dayMinutes
-                ? `Visits add up to ${formatDuration(visitMinutes)}, longer than your ${formatDuration(dayMinutes)} day before travel.`
-                : selected.length < RECOMMENDED_MIN_POIS
-                  ? `${formatDuration(visitMinutes)} of visits. Add a few more for a full day.`
-                  : `${formatDuration(visitMinutes)} of visits in a ${formatDuration(dayMinutes)} day.`}
+              : atCap
+                ? "That's the most for one day."
+                : 'Ready when you are.'}
           </span>
-          <div
-            className="selection-meter"
-            role="presentation"
-          >
+          <div className="selection-meter" role="presentation">
             <div
-              style={{
-                width: `${(selected.length / MAX_SELECTED_POIS) * 100}%`,
-              }}
+              style={{ width: `${(selections.length / MAX_SELECTED_POIS) * 100}%` }}
             />
           </div>
         </div>
@@ -306,11 +376,8 @@ function ChoosePlacesPage() {
             size="large"
             endIcon="arrow-right"
             text="Build itinerary"
-            disabled={selected.length === 0}
-            onClick={() => {
-              setSelectedPoiIds(selected)
-              navigate('/plan/itinerary')
-            }}
+            disabled={selections.length === 0}
+            onClick={() => navigate('/plan/itinerary')}
           />
         </div>
       </div>

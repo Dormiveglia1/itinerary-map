@@ -657,15 +657,145 @@ h3,
   font-weight: 600;
 }
 
-.places-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+.places-search {
+  margin-bottom: 0.75rem;
 }
 
-.places-search {
-  flex: 1 1 14rem;
+.search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.8rem;
+  border: 0;
+  border-radius: 999px;
+  background-color: #fff;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--navy-800);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.search-chip .bp6-icon {
+  color: var(--blue-500);
+}
+
+.search-chip:hover {
+  box-shadow: inset 0 0 0 1px var(--blue-300);
+}
+
+.search-chip:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+.search-chip-active,
+.search-chip-active:hover {
+  background-color: var(--blue-500);
+  box-shadow: none;
+  color: #fff;
+}
+
+.search-chip-active .bp6-icon {
+  color: #fff;
+}
+
+.places-empty {
+  padding: 2.5rem 0;
+}
+
+.your-places {
+  margin-top: 2rem;
+}
+
+.your-places h2 {
+  margin: 0 0 0.25rem;
+  font-size: 20px;
+}
+
+.your-places-lead {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+}
+
+.your-places ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.your-place {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'icon name remove'
+    'priority priority priority';
+  align-items: center;
+  gap: 0.5rem 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background-color: #fff;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+@media (min-width: 640px) {
+  .your-place {
+    grid-template-columns: auto minmax(0, 1fr) 15rem auto;
+    grid-template-areas: 'icon name priority remove';
+  }
+}
+
+.your-place > .place-card-icon {
+  grid-area: icon;
+  width: 34px;
+  height: 34px;
+}
+
+.your-place-name {
+  grid-area: name;
+  min-width: 0;
+}
+
+.your-place-name strong {
+  display: block;
+  color: var(--navy-800);
+}
+
+.your-place-name small {
+  color: var(--text-muted);
+}
+
+.your-place-priority {
+  grid-area: priority;
+  padding: 0 0.5rem;
+}
+
+.your-place-priority-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.your-place-priority-label strong {
+  color: var(--blue-600);
+}
+
+.your-place > .bp6-button {
+  grid-area: remove;
 }
 
 .places-grid {

@@ -1,16 +1,12 @@
 // Frontend view of the backend API, following the data contract
-// (docs: Data Contract v0.1). Times of day are integer minutes since local
-// midnight, dates are ISO `YYYY-MM-DD` in the city's time zone.
-//
-// Deviation from v0.1: budget/cost are replaced by Google's 1–4 price level,
-// since Places doesn't provide a per-person cost.
+// (docs/data-contract.md, v0.1). Times of day are integer minutes since local
+// midnight, dates are ISO `YYYY-MM-DD` in the city's time zone, money is CAD.
 
 export type TransportMode = 'walk' | 'drive' | 'transit'
 
-export type Pace = 'relaxed' | 'moderate' | 'packed'
-
-// Google Places price level: 1 = inexpensive … 4 = very expensive.
-export type PriceLevel = 1 | 2 | 3 | 4
+// Not passed to the optimizer; the backend uses it to scale default visit
+// durations.
+export type Pace = 'relaxed' | 'normal' | 'packed'
 
 export interface LatLng {
   lat: number
@@ -26,15 +22,13 @@ export interface MealWindows {
 }
 
 // TripConfig as sent in POST /api/itineraries/generate (no contract_version).
-// `pace` isn't in v0.1's TripConfig, but the backend needs it to default
-// visit_minutes, so the frontend sends it with the trip.
 export interface TripConfig {
   city: string
   timezone: string
   dates: string[]
   day_start: number
   day_end: number
-  max_price_level: PriceLevel
+  budget: number
   transport_mode: TransportMode
   pace: Pace
   accommodation: LatLng
@@ -43,61 +37,68 @@ export interface TripConfig {
 
 export type PoiKind = 'attraction' | 'restaurant'
 
-// A result from GET /api/places/search. 'lodging' is used when searching for
-// accommodation and isn't in v0.1 yet.
+// A result from GET /api/places/search.
 export interface PlaceSearchResult {
   place_id: string
   name: string
-  kind: PoiKind | 'lodging'
+  kind: PoiKind
   lat: number
   lng: number
 }
 
-// A candidate place returned by the backend's POI search (SRS §8 POI Retrieval).
-export interface Poi {
-  placeId: string
-  name: string
-  category: PoiKind
-  location: LatLng
-  visitDurationMinutes: number
-  // null when Google has no price level for the place (e.g. free attractions).
-  priceLevel: PriceLevel | null
+export interface Selection {
+  place_id: string
+  // 1–10, set by the user.
+  priority: number
+  // Omitted to let the backend default it by category and pace.
+  visit_minutes?: number
 }
 
-export interface ItineraryRequest {
+export interface GenerateRequest {
   trip: TripConfig
-  poiIds: string[]
+  selections: Selection[]
 }
 
-export interface VisitEntry {
-  kind: 'visit'
-  poi: Poi
-  startTime: string
-  endTime: string
+export interface Activity {
+  poi_id: string
+  name: string
+  start: number
+  end: number
+  travel_minutes_before: number
 }
-
-export interface TravelEntry {
-  kind: 'travel'
-  fromPlaceId: string
-  toPlaceId: string
-  mode: TransportMode
-  startTime: string
-  endTime: string
-}
-
-export type ItineraryEntry = VisitEntry | TravelEntry
 
 export interface ItineraryDay {
   date: string
-  entries: ItineraryEntry[]
+  activities: Activity[]
+  return_travel_minutes: number
 }
 
-export interface Itinerary {
-  days: ItineraryDay[]
+export type UnscheduledReason =
+  | 'closed_on_trip_dates'
+  | 'no_time'
+  | 'over_budget'
+  | 'unreachable'
+
+export interface Unscheduled {
+  poi_id: string
+  name?: string
+  reason: UnscheduledReason
+}
+
+export interface Violation {
+  code: string
+  // Shown to the user.
+  message: string
 }
 
 // "infeasible" is an expected outcome (no schedule fits the constraints), not
-// a transport error, so it is part of the result rather than a thrown error.
-export type ItineraryResult =
-  | { status: 'ok'; itinerary: Itinerary }
-  | { status: 'infeasible'; reason: string }
+// an HTTP error: `days` is empty and `violations` explains why.
+export interface ItineraryResult {
+  status: 'ok' | 'infeasible'
+  algorithm: string | null
+  total_priority: number
+  total_cost: number
+  days: ItineraryDay[]
+  unscheduled: Unscheduled[]
+  violations: Violation[]
+}

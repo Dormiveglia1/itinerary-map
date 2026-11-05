@@ -3,8 +3,10 @@ import { Suggest, type ItemRenderer } from '@blueprintjs/select'
 import { useEffect, useState } from 'react'
 import { searchPlaces, type PlaceSearchResult } from '../api/index.ts'
 
-// Waits for a pause in typing so the real endpoint isn't hit per keystroke.
-const SEARCH_DEBOUNCE_MS = 250
+// Each search is a billed Google call, so wait for a pause in typing and a
+// few characters before searching.
+const SEARCH_DEBOUNCE_MS = 400
+const MIN_QUERY_LENGTH = 2
 
 interface PlaceSuggestProps {
   id?: string
@@ -25,7 +27,6 @@ const renderPlace: ItemRenderer<PlaceSearchResult> = (
     active={modifiers.active}
     disabled={modifiers.disabled}
     text={place.name}
-    label={place.kind}
     onClick={handleClick}
     onFocus={handleFocus}
     roleStructure="listoption"
@@ -42,30 +43,33 @@ function PlaceSuggest({
 }: PlaceSuggestProps) {
   const [query, setQuery] = useState('')
   // Results are tagged with the query they answer, so a stale response can be
-  // told apart from the current one.
+  // told apart from the current one. `places` is null when the search failed.
   const [search, setSearch] = useState<{
     query: string
-    places: PlaceSearchResult[]
+    places: PlaceSearchResult[] | null
   }>({ query: '', places: [] })
 
-  const hasQuery = query.trim() !== ''
-  const results = hasQuery ? search.places : []
-  const loading = hasQuery && search.query !== query
+  const hasQuery = query.trim().length >= MIN_QUERY_LENGTH
+  const answered = search.query === query
+  const results = hasQuery && answered ? (search.places ?? []) : []
+  const loading = hasQuery && !answered
+  const failed = hasQuery && answered && search.places === null
 
   useEffect(() => {
-    if (!query.trim()) {
+    if (query.trim().length < MIN_QUERY_LENGTH) {
       return
     }
-    let cancelled = false
+    const controller = new AbortController()
     const timer = setTimeout(() => {
-      searchPlaces(city, query)
-        .catch(() => [])
-        .then((places) => {
-          if (!cancelled) setSearch({ query, places })
-        })
+      searchPlaces(city, query.trim(), controller.signal).then(
+        (places) => setSearch({ query, places }),
+        () => {
+          if (!controller.signal.aborted) setSearch({ query, places: null })
+        },
+      )
     }, SEARCH_DEBOUNCE_MS)
     return () => {
-      cancelled = true
+      controller.abort()
       clearTimeout(timer)
     }
   }, [city, query])
@@ -95,7 +99,9 @@ function PlaceSuggest({
               ? 'Type to search'
               : loading
                 ? 'Searching…'
-                : 'No matching places'
+                : failed
+                  ? "Search isn't available right now"
+                  : 'No matching places'
           }
           roleStructure="listoption"
         />

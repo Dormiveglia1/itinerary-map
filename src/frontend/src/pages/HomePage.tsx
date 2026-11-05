@@ -58,7 +58,7 @@ const FEATURES: { icon: IconName; title: string; body: string }[] = [
   {
     icon: 'dollar',
     title: 'Your budget',
-    body: 'Set a price range and places above it are left out.',
+    body: 'Set a budget and meals and admissions are kept within it.',
   },
 ]
 
