@@ -4,9 +4,6 @@ import type {
   PlaceSearchResult,
 } from './types.ts'
 
-// Empty in development: Vite proxies /api to the backend (vite.config.ts).
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
-
 // A failed request. `code` is the backend's error code ("invalid_input",
 // "google_unavailable", ...), or "network_error" when the server wasn't reached.
 export class ApiError extends Error {
@@ -21,10 +18,12 @@ export class ApiError extends Error {
   }
 }
 
+// Paths are same-origin; in development Vite proxies /api to the backend
+// (vite.config.ts).
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, init)
+    response = await fetch(path, init)
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error
