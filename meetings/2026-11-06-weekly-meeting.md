@@ -2,7 +2,7 @@
 
 **Date:** November 6, 2026 (Friday)  
 **Project:** COMP SCI 4ZP6 — Group 18, Itinerary Map  
-**Attendees mentioned:** Hashim, Rebecca, Eric, Steven, Mike (confirm full attendance before committing)  
+**Attendees mentioned:** Hashim Butt, Rebecca Yang, Yuhao(Eric) Zhang, Xueyan(Steven) Feng, Shaoyuan(Mike) Wu, Eric Lee, Lihan Zhang
 **Meeting Objective:** Align the team's Proof of Concept (PoC) scope and implementation priorities ahead of the TA meeting next Wednesday.
 
 ## Discussion Summary
