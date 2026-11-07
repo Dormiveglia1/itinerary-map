@@ -313,49 +313,49 @@ def _Algorithums(available, date, trip, travel_times):
         route, current_schedule = best
 
 
+
 def _unscheduled_reason(poi, dates, trip, matrix, scheduled_routes):
     """
-    Diagnose why an unscheduled POI could not be added.
+    Find a reason why a POI was not scheduled
 
-    First check whether the POI is feasible by itself.
-    Then try inserting it into the final daily routes.
+    Budget is shared across the entire trip
     """
 
-    solo_reasons = []
+    # check whether the poi is closed on every trip date
+    if all(
+        not poi.get("opening_hours", {}).get(date)
+        for date in dates
+    ):
+        return "closed_on_trip_dates"
 
-    for date in dates:
+    # the cost of all currently scheduled POIs
+    total_spent = 0
 
-        schedule, reason = _schedule(
-            [poi], date, trip, matrix, explain=True
-        )
+    for route in scheduled_routes:
+        for selected_poi in route:
+            total_spent += selected_poi["cost"]
 
-        if schedule is not None:
-            break
+    remaining_budget = trip["budget"] - total_spent
 
-        solo_reasons.append(reason)
+    # check whether budget prevents adding this poi
+    budget_blocked = False
+    failure_reasons = []
 
-    else:
-        # poi cannot be visited alone on any date
-        for reason in (
-            "closed_on_trip_dates",
-            "over_budget",
-            "unreachable",
-            "no_time"
-        ):
-            if solo_reasons and all(
-                r == reason for r in solo_reasons
-            ):
-                return reason
-
-        # different dates may fail for different reasons
-        return solo_reasons[0] if solo_reasons else "no_time"
-
-    # The poi is individually feasible
-    # check whether it fits into any completed day
-    reasons = []
-
+    # try adding this poi to each day
     for date, route in zip(dates, scheduled_routes):
 
+        # Calculate the existing cost of this day
+        day_cost = sum(
+            p["cost"] for p in route
+        )
+
+        # money available to this day if we keep all the other days unchanged
+        available_budget = remaining_budget + day_cost
+
+        day_trip = trip.copy()
+        day_trip["budget"] = available_budget
+
+        # inserting the poi at every position
         for pos in range(len(route) + 1):
 
             candidate = (
@@ -365,27 +365,46 @@ def _unscheduled_reason(poi, dates, trip, matrix, scheduled_routes):
             )
 
             schedule, reason = _schedule(
-                candidate, date, trip, matrix, explain=True
+                candidate,
+                date,
+                day_trip,
+                matrix,
+                explain=True
             )
 
             if schedule is not None:
-                # the current heuristic did not include this poi
+                # It fits the completed route, but the heuristic did not select it
                 return "no_time"
 
-            reasons.append(reason)
+            failure_reasons.append(reason)
 
-    if reasons and all(r == "over_budget" for r in reasons):
+            if reason == "over_budget":
+
+                relaxed_trip = day_trip.copy()
+                relaxed_trip["budget"] = float("inf")
+
+                relaxed_schedule = _schedule(
+                    candidate,
+                    date,
+                    relaxed_trip,
+                    matrix
+                )
+
+                if relaxed_schedule is not None:
+                    budget_blocked = True
+
+    # budget is the confirmed blocking constraint for at least one otherwise feasible insertion
+    if budget_blocked:
         return "over_budget"
 
-    if reasons and all(r == "unreachable" for r in reasons):
+    if failure_reasons and all(
+        reason == "unreachable"
+        for reason in failure_reasons
+    ):
         return "unreachable"
 
-    if reasons and all(
-        r == "closed_on_trip_dates" for r in reasons
-    ):
-        return "closed_on_trip_dates"
-
     return "no_time"
+
 
 
 def generate_itinerary(trip, pois, travel_times):
@@ -438,11 +457,21 @@ def generate_itinerary(trip, pois, travel_times):
     total_priority = 0
     total_cost = 0
 
+    # total budget shared across all trip days
+    remaining_budget = trip["budget"]
+
+
     # build each day separately
     for date in dates:
 
+        # a copy for this day
+        day_trip = trip.copy()
+
+        # only allow this day to spend what remains
+        day_trip["budget"] = remaining_budget
+
         chosen, schedule = _Algorithums(
-            remaining, date, trip, travel_times
+            remaining, date, day_trip, travel_times
         )
 
         chosen_ids = {p["id"] for p in chosen}
@@ -455,6 +484,8 @@ def generate_itinerary(trip, pois, travel_times):
 
         total_priority += _score(chosen)
         total_cost += schedule["total_cost"]
+        # subtracy today's cost from the remaining trip budget
+        remaining_budget -= schedule["total_cost"]
 
         scheduled_routes.append(chosen)
 
