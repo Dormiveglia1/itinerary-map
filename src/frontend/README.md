@@ -38,16 +38,20 @@ The existing planning workflow and API types are unchanged.
   derived from start - arrival. Unknown times remain null. Zero is valid.
   Returns null for infeasible results or an absent day. Coordinate values are
   trusted here; runtime API validation remains part of future integration.
-- `mockItinerary.ts`: scenarios for normal stops with null polylines, derived
+- `mockItinerary.ts`: default two-day itinerary plus scenarios for normal stops with null polylines, derived
   times, unknown times, an empty day, no days, and an infeasible result.
 - `MapPreviewPage.tsx` / `map.css`: temporary canvas, list and details for
-  checking interactions. Selection resets when the scenario changes.
+  checking interactions. Date buttons switch the active day; selection resets
+  when the day or scenario changes. Each day uses the same accommodation and day start.
 
 ### Check the preview
 
 1. Select each numbered marker and each list item; verify both highlight the same
    stop and update details. Tab to a marker and press Enter to select it.
-2. Switch scenarios. Derived times should match normal times; placeholder times
+   Switch to Day 2: only its two stops and route should appear, numbering restarts
+   at 1, and prior selection clears. Switch back to Day 1 to see its three stops.
+2. Expand Development test scenarios below the preview to switch scenarios.
+   Derived times should match normal times; placeholder times
    should say Unavailable, while known zero waiting should say 0 min.
 3. Empty/no-days scenarios show an empty state. Infeasible shows the violation
    and unscheduled place instead of a route.
@@ -63,6 +67,7 @@ The existing planning workflow and API types are unchanged.
 - Integrate generation into the itinerary page once backend v0.2 is available;
   update shared API types in coordination with the frontend/backend team.
 
-Only day index 0 is previewed. Multi-day controls, actual routing, HTTP calls and
-production page integration are not implemented. The split of remaining work
+The preview supports selecting a day from `days[]`; it does not generate multi-day
+schedules. Actual routing, HTTP calls and production page integration are not implemented.
+Different accommodation or start times per day are not modeled. The split of remaining work
 is intentionally not assigned yet.

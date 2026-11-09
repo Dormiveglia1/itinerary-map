@@ -36,6 +36,22 @@ const missingTimes: MapApiResult = {
   })),
 }
 
+const multiDay: MapApiResult = {
+  ...normal,
+  days: [...normal.days, {
+    date: '2026-11-15',
+    activities: [
+      { poi_id: 'demo-tower', name: 'CN Tower', lat: 43.6426, lng: -79.3871,
+        arrival: 560, start: 570, end: 660, wait_minutes: 10,
+        travel_minutes_before: 20, route_polyline_before: null },
+      { poi_id: 'demo-waterfront', name: 'Harbourfront Centre', lat: 43.6387, lng: -79.3816,
+        arrival: 675, start: 675, end: 735, wait_minutes: 0,
+        travel_minutes_before: 15, route_polyline_before: null },
+    ],
+    return_travel_minutes: 25, return_route_polyline: null,
+  }],
+}
+
 const fallbackTimes: MapApiResult = {
   ...normal,
   days: normal.days.map((day) => ({ ...day,
@@ -44,6 +60,7 @@ const fallbackTimes: MapApiResult = {
 }
 
 export const mockScenarios: Record<string, { label: string; result: MapApiResult }> = {
+  multiDay: { label: 'Two-day itinerary', result: multiDay },
   normal: { label: 'Scheduled stops / no polylines', result: normal },
   fallback: { label: 'Derive arrival and waiting', result: fallbackTimes },
   missing: { label: 'Placeholder / times unavailable', result: missingTimes },

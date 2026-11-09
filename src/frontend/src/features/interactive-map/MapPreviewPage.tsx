@@ -10,27 +10,42 @@ function time(value: number | null): string {
 }
 
 export default function MapPreviewPage() {
-  const [scenario, setScenario] = useState('normal')
+  const [scenario, setScenario] = useState('multiDay')
+  const [dayIndex, setDayIndex] = useState(0)
   const result = mockScenarios[scenario].result
-  const trip = toMapItinerary(result, mockContext)
+  const trip = toMapItinerary(result, mockContext, dayIndex)
   return (
     <section className="map-preview">
       <h1>Interactive map preview</h1>
       <p className="map-preview-notice">Demo data · Schematic coordinates and straight connections, not road directions. Google Maps integration is the next step.</p>
-      <label className="map-preview-scenario">Preview scenario{' '}
-        <select value={scenario} onChange={(event) => setScenario(event.target.value)}>
-          {Object.entries(mockScenarios).map(([id, value]) => <option key={id} value={id}>{value.label}</option>)}
-        </select>
-      </label>
+      {result.status === 'ok' && result.days.length > 0 && <nav className="map-preview-days" aria-label="Itinerary days">
+        {result.days.map((day, index) => <button key={`${day.date}-${index}`} type="button"
+          aria-current={index === dayIndex ? 'date' : undefined}
+          onClick={() => setDayIndex(index)}>
+          <strong>Day {index + 1}</strong>
+          <span>{day.date}</span>
+        </button>)}
+      </nav>}
       {result.status === 'infeasible' ? <div role="status">
         <h2>No feasible itinerary</h2>
         {result.violations.map((violation, index) => <p key={`${violation.code}-${index}`}>{violation.message}</p>)}
-      </div> : !trip || trip.stops.length === 0 ? <p role="status">No scheduled stops to display. Choose another preview scenario.</p>
-        : <ItineraryPreview key={scenario} trip={trip} />}
+      </div> : !trip || trip.stops.length === 0 ? <p role="status">{trip ? 'No scheduled stops for this day.' : 'No itinerary days to display.'}</p>
+        : <ItineraryPreview key={`${scenario}-${dayIndex}`} trip={trip} />}
       {result.unscheduled.length > 0 && <section>
         <h2>Unscheduled places</h2>
         <ul>{result.unscheduled.map((place) => <li key={place.poi_id}>{place.name ?? place.poi_id}: {place.reason.replaceAll('_', ' ')}</li>)}</ul>
       </section>}
+      <details className="map-preview-tools">
+        <summary>Development test scenarios</summary>
+        <label className="map-preview-scenario">Preview scenario{' '}
+          <select value={scenario} onChange={(event) => {
+            setScenario(event.target.value)
+            setDayIndex(0)
+          }}>
+            {Object.entries(mockScenarios).map(([id, value]) => <option key={id} value={id}>{value.label}</option>)}
+          </select>
+        </label>
+      </details>
     </section>
   )
 }

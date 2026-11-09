@@ -1,4 +1,10 @@
 .map-preview { max-width: 1180px; margin: 0 auto; }
+.map-preview-days { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+.map-preview-days button { display: grid; gap: 5px; padding: 10px 18px; background: white; color: #233d5b; border: 1px solid #ccd9e8; border-radius: 9px; text-align: left; cursor: pointer; }
+.map-preview-days button[aria-current] { background: #e5efff; border-color: #215eaf; }
+.map-preview-days button:focus-visible { outline: 3px solid #215eaf; outline-offset: 2px; }
+.map-preview-tools { margin-top: 28px; padding-top: 16px; border-top: 1px solid #d7e1ed; color: #42556c; }
+.map-preview-tools summary { cursor: pointer; }
 .map-preview-scenario { display: block; margin: 18px 0; }
 .map-preview-scenario select { max-width: 100%; padding: 8px; border: 1px solid #ccd9e8; border-radius: 6px; background: white; }
 .map-preview-notice { padding: 14px 18px; background: #eaf2ff; border-radius: 10px; color: #23446e; }
