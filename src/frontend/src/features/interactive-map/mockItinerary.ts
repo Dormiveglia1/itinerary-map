@@ -3,12 +3,14 @@ import type { MapApiResult, MapInputContext } from './types.ts'
 export const mockContext: MapInputContext = {
   accommodation: { name: 'Demo accommodation', lat: 43.6505, lng: -79.384 },
   dayStart: 540,
+  city: 'Toronto',
+  transportMode: 'walk',
 }
 
-// Map-relevant subset of a synthetic v0.2 REST response. IDs and schedule are demo-only.
-// Unused totals/algorithm/plan fields are deliberately omitted from this fixture.
+// Synthetic REST responses. Optional plan is absent until its backend implementation lands.
+// IDs, costs and schedules are demo-only, not optimized or verified.
 const normal: MapApiResult = {
-  status: 'ok',
+  status: 'ok', algorithm: 'demo', total_priority: 18, total_cost: 50,
   days: [{
     date: '2026-11-14',
     activities: [
@@ -37,7 +39,7 @@ const missingTimes: MapApiResult = {
 }
 
 const multiDay: MapApiResult = {
-  ...normal,
+  ...normal, total_priority: 30, total_cost: 90,
   days: [...normal.days, {
     date: '2026-11-15',
     activities: [
@@ -62,12 +64,20 @@ const fallbackTimes: MapApiResult = {
 export const mockScenarios: Record<string, { label: string; result: MapApiResult }> = {
   multiDay: { label: 'Two-day itinerary', result: multiDay },
   normal: { label: 'Scheduled stops / no polylines', result: normal },
+  plan: { label: 'Plan and unscheduled place', result: {
+    ...normal,
+    unscheduled: [{ poi_id: 'demo-park', name: 'Demo park', lat: 43.66, lng: -79.4, reason: 'no_time' }],
+    plan: { days: [{ date: '2026-11-14', steps: [
+      { time: 540, kind: 'depart', text: 'Leave the accommodation.' },
+      { time: 600, kind: 'visit', text: 'Visit Royal Ontario Museum for 2 hours.', warning: null },
+    ], summary: { stops: 3, travel_minutes: 105, cost: 50, slack_minutes: 40 } }] },
+  } },
   fallback: { label: 'Derive arrival and waiting', result: fallbackTimes },
   missing: { label: 'Placeholder / times unavailable', result: missingTimes },
-  empty: { label: 'Empty day', result: { ...normal, days: [{ ...normal.days[0], activities: [], return_travel_minutes: 0 }] } },
-  noDays: { label: 'No days returned', result: { ...normal, days: [] } },
+  empty: { label: 'Empty day', result: { ...normal, total_priority: 0, total_cost: 0, days: [{ ...normal.days[0], activities: [], return_travel_minutes: 0 }] } },
+  noDays: { label: 'No days returned', result: { ...normal, total_priority: 0, total_cost: 0, days: [] } },
   infeasible: { label: 'Infeasible itinerary', result: {
-    status: 'infeasible', days: [],
+    status: 'infeasible', algorithm: 'demo', total_priority: 0, total_cost: 0, days: [],
     unscheduled: [{ poi_id: 'demo-rom', name: 'Royal Ontario Museum', reason: 'no_time' }],
     violations: [{ code: 'MANDATORY_CANNOT_FIT', message: 'The essential visit cannot fit within this demo day.', poi_ids: ['demo-rom'] }],
   } },
