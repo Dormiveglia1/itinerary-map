@@ -197,7 +197,7 @@ def generate_itinerary(trip: TripConfig,
           "start": 751, "end": 871, "travel_minutes_before": 31 }
       ],
       "return_travel_minutes": 25,
-      "slack_minutes": 40
+      "slack_minutes": 372
     }
   ],
   "unscheduled": [
@@ -295,6 +295,137 @@ The backend fetches polylines **only for the legs in the final itinerary** (one 
 per leg), so the frontend never needs a Google key for routing. If a polyline call fails,
 the field is `null` and the map draws a straight line.
 
+#### Order of activities and legs (v0.2)
+
+- `days` are in date order. Within a day, `activities` are in **visit order**.
+- Each activity describes the leg that **arrives** at it:
+  - the first activity's leg starts at the **accommodation**;
+  - every later activity's leg starts at the **previous activity**;
+  - `return_route_polyline` / `return_travel_minutes` go from the **last activity back to the
+    accommodation**.
+- So a day with *n* activities has *n + 1* legs:
+  `accommodation → A₁ → A₂ → … → Aₙ → accommodation`.
+- `travel_minutes_before` follows the same rule as `route_polyline_before`.
+- A day with no activities has `activities: []`, `return_travel_minutes: 0` and
+  `return_route_polyline: null`.
+- The accommodation's coordinates are the request's `trip.accommodation`; they are not
+  repeated in the response.
+
+#### Full response example (v0.2)
+
+A feasible day with two stops. The second leg's polyline failed and is `null`; one place
+was closed. (Polyline strings are illustrative.)
+
+```json
+{
+  "status": "ok",
+  "algorithm": "greedy+insertion+local_search",
+  "total_priority": 15,
+  "total_cost": 61.0,
+  "days": [
+    {
+      "date": "2026-11-14",
+      "activities": [
+        {
+          "poi_id": "ChIJ...ROM",
+          "name": "Royal Ontario Museum",
+          "lat": 43.6677,
+          "lng": -79.3948,
+          "travel_minutes_before": 18,
+          "route_polyline_before": "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+          "arrival": 558,
+          "wait_minutes": 42,
+          "start": 600,
+          "end": 720
+        },
+        {
+          "poi_id": "ChIJ...CNT",
+          "name": "CN Tower",
+          "lat": 43.6426,
+          "lng": -79.3871,
+          "travel_minutes_before": 31,
+          "route_polyline_before": null,
+          "arrival": 751,
+          "wait_minutes": 0,
+          "start": 751,
+          "end": 871
+        }
+      ],
+      "return_travel_minutes": 25,
+      "return_route_polyline": "u{~vFvyys@fS]",
+      "slack_minutes": 372
+    }
+  ],
+  "unscheduled": [
+    {
+      "poi_id": "ChIJ...AGO",
+      "name": "Art Gallery of Ontario",
+      "lat": 43.6536,
+      "lng": -79.3925,
+      "reason": "closed_on_trip_dates"
+    }
+  ],
+  "violations": []
+}
+```
+
+An infeasible result (any reason) looks like this. `days` is always empty:
+
+```json
+{
+  "status": "infeasible",
+  "algorithm": null,
+  "total_priority": 0,
+  "total_cost": 0.0,
+  "days": [],
+  "unscheduled": [],
+  "violations": [
+    {
+      "code": "MANDATORY_CONFLICT",
+      "message": "Royal Ontario Museum and CN Tower can't both fit on the same day.",
+      "poi_ids": ["ChIJ...ROM", "ChIJ...CNT"]
+    }
+  ]
+}
+```
+
+#### Field reference (frontend response)
+
+"Always" = the key is always present. "Nullable" = the value may be `null`.
+
+| Field | Type | Always | Nullable | Notes |
+|---|---|---|---|---|
+| `status` | `"ok"` \| `"infeasible"` | yes | no | |
+| `algorithm` | string | yes | yes | `null` when the backend decided before running the optimizer |
+| `total_priority` | integer | yes | no | |
+| `total_cost` | number | yes | no | CAD per person |
+| `days[]` | array | yes | no | empty when `infeasible` |
+| `days[].date` | `"YYYY-MM-DD"` | yes | no | |
+| `days[].activities[]` | array | yes | no | visit order |
+| `…activities[].poi_id` | string | yes | no | Google Place ID |
+| `…activities[].name` | string | yes | no | |
+| `…activities[].lat`, `lng` | number | yes | no | WGS84 decimal degrees |
+| `…activities[].travel_minutes_before` | integer | yes | no | leg arriving here |
+| `…activities[].route_polyline_before` | string | yes | **yes** | `null` if the Routes call failed or polylines are disabled → draw a straight line |
+| `…activities[].arrival` | integer | yes | no | minutes since midnight |
+| `…activities[].wait_minutes` | integer | yes | no | `start − arrival` |
+| `…activities[].start`, `end` | integer | yes | no | minutes since midnight |
+| `days[].return_travel_minutes` | integer | yes | no | |
+| `days[].return_route_polyline` | string | yes | **yes** | last activity → accommodation |
+| `days[].slack_minutes` | integer | yes | no | ≥ 0 |
+| `unscheduled[]` | array | yes | no | may be empty |
+| `unscheduled[].poi_id`, `name`, `reason` | string | yes | no | |
+| `unscheduled[].lat`, `lng` | number | **no** | no | present only when the place's location is known |
+| `violations[]` | array | yes | no | empty when `ok` |
+| `violations[].code`, `message` | string | yes | no | show `message` to the user |
+| `violations[].poi_ids` | string[] | **no** | no | present for mandatory-related codes |
+| `plan` | object | **no** | no | added when the plan builder (#26) lands; handle its absence |
+
+Polylines use Google's
+[Encoded Polyline Algorithm Format](https://developers.google.com/maps/documentation/utilities/polylinealgorithm)
+(precision 5). Decode with `google.maps.geometry.encoding.decodePath()` or any
+standard polyline decoder. In JSON, a `\\` in the string stands for one backslash.
+
 `plan` (PoC: returned inline, no `GET /api/itineraries/{id}/plan` until trips are saved):
 
 ```json
@@ -309,7 +440,7 @@ the field is `null` and the map draws a straight line.
         { "time": 600, "kind": "visit",  "text": "Royal Ontario Museum, 2 h", "warning": null },
         { "time": 871, "kind": "return", "text": "Walk 25 min back to the hotel (arrive 14:56)" }
       ],
-      "summary": { "stops": 2, "travel_minutes": 74, "cost": 61.0, "slack_minutes": 40 }
+      "summary": { "stops": 2, "travel_minutes": 74, "cost": 61.0, "slack_minutes": 372 }
     }
   ]
 }
