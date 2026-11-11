@@ -25,7 +25,7 @@ export default function MapPreviewPage() {
       <h1>Interactive map preview</h1>
 
       <p className="map-preview-notice">
-        Demo itinerary data · Google Maps base map. Routes are not displayed yet.
+        Demo itinerary data · Google Maps base map. 
       </p>
 
       {result.status === 'ok' && result.days.length > 0 && (

@@ -1,12 +1,15 @@
 /// <reference types="google.maps" />
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   APIProvider,
   AdvancedMarker,
+  ControlPosition,
   Map,
+  MapControl,
   Pin,
   useMap,
+  useMapsLibrary,
 } from '@vis.gl/react-google-maps'
 import type { MapItinerary, PoiSelectionProps } from './types.ts'
 
@@ -54,6 +57,96 @@ function MapCamera({ itinerary, selectedPoiId }: MapCameraProps) {
   return null
 }
 
+function ItineraryRoute({ itinerary }: { itinerary: MapItinerary }) {
+  const map = useMap()
+  const geometry = useMapsLibrary('geometry')
+
+  const segments = useMemo(() => {
+    if (!geometry || itinerary.stops.length === 0) return []
+
+    const { accommodation, stops, returnRoutePolyline } = itinerary
+    const legs = [
+      ...stops.map((stop, index) => ({
+        from: index === 0 ? accommodation : stops[index - 1],
+        to: stop,
+        encoded: stop.routePolylineBefore,
+      })),
+      {
+        from: stops[stops.length - 1],
+        to: accommodation,
+        encoded: returnRoutePolyline,
+      },
+    ]
+
+    return legs.map(({ from, to, encoded }) => {
+      const decoded = encoded ? geometry.encoding.decodePath(encoded) : []
+
+      if (decoded.length >= 2) {
+        return { path: decoded, schematic: false }
+      }
+
+      return {
+        path: [
+          { lat: from.lat, lng: from.lng },
+          { lat: to.lat, lng: to.lng },
+        ],
+        schematic: true,
+      }
+    })
+  }, [geometry, itinerary])
+
+  useEffect(() => {
+    if (!map) return
+
+    const lines = segments.map(({ path, schematic }) => {
+      return new google.maps.Polyline({
+        map,
+        path,
+        clickable: false,
+        strokeColor: '#205caa',
+        strokeWeight: 4,
+        strokeOpacity: schematic ? 0 : 0.9,
+        icons: schematic
+          ? [
+              {
+                icon: {
+                  path: 'M 0,-1 0,1',
+                  strokeColor: '#205caa',
+                  strokeOpacity: 1,
+                  scale: 3,
+                },
+                offset: '0',
+                repeat: '14px',
+              },
+            ]
+          : undefined,
+      })
+    })
+
+    return () => {
+      lines.forEach((line) => line.setMap(null))
+    }
+  }, [map, segments])
+
+  if (!segments.some((segment) => segment.schematic)) return null
+
+  return (
+    <MapControl position={ControlPosition.BOTTOM_CENTER}>
+      <p
+        style={{
+          margin: 8,
+          padding: '6px 10px',
+          background: '#fff',
+          borderRadius: 6,
+          fontSize: 12,
+        }}
+      >
+        Dashed lines show approximate connections.
+      </p>
+    </MapControl>
+  )
+}
+
 export default function ItineraryMap({
   itinerary,
   selectedPoiId,
@@ -95,10 +188,11 @@ export default function ItineraryMap({
           onClick={() => onSelectPoi(null)}
         >
           <MapCamera
+          
             itinerary={itinerary}
             selectedPoiId={selectedPoiId}
           />
-
+          <ItineraryRoute itinerary={itinerary} />
           <AdvancedMarker
             position={{
               lat: itinerary.accommodation.lat,
