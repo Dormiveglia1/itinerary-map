@@ -1,5 +1,5 @@
 /// <reference types="google.maps" />
-
+import type { ReactNode } from 'react'
 import { useEffect, useMemo } from 'react'
 import {
   APIProvider,
@@ -10,6 +10,8 @@ import {
   Pin,
   useMap,
   useMapsLibrary,
+  APILoadingStatus,
+  useApiLoadingStatus,
 } from '@vis.gl/react-google-maps'
 import type { ItineraryMapProps, MapItinerary } from './types.ts'
 
@@ -144,6 +146,30 @@ function ItineraryRoute({ itinerary }: { itinerary: MapItinerary }) {
   )
 }
 
+function MapLoadState({ children }: { children: ReactNode }) {
+  const status = useApiLoadingStatus()
+
+  if (
+    status === APILoadingStatus.FAILED ||
+    status === APILoadingStatus.AUTH_FAILURE
+  ) {
+    return (
+      <div style={{ minHeight: 490, padding: 24 }}>
+        <p role="alert">Google Maps could not load.</p>
+        <button type="button" onClick={() => window.location.reload()}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (status !== APILoadingStatus.LOADED) {
+    return <p role="status">Loading Google Maps…</p>
+  }
+
+  return <>{children}</>
+}
+
 export default function ItineraryMap({
   trip: itinerary,
   selectedPoiId,
@@ -173,8 +199,9 @@ export default function ItineraryMap({
 
   return (
     <APIProvider apiKey={apiKey}>
-      <div style={{ width: '100%', height: 490 }}>
-        <Map
+      <MapLoadState>
+        <div style={{ width: '100%', height: 490 }}>
+          <Map
           mapId="DEMO_MAP_ID"
           defaultCenter={{
             lat: itinerary.accommodation.lat,
@@ -227,8 +254,8 @@ export default function ItineraryMap({
             )
           })}
         </Map>
-      </div>
+        </div>
+      </MapLoadState>
     </APIProvider>
   )
 }
-
