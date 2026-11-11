@@ -14,15 +14,21 @@ In Windows PowerShell, use `npm.cmd` if script execution is restricted.
 
 ## Preview without backend
 
-Open the printed Local URL with `/dev/map` appended (usually
-http://localhost:5173/dev/map). Development-only route; unavailable in production.
-The default fixture has two days. Expand Development test scenarios at the bottom
-for missing times, derived arrival/waiting, empty days, no days, infeasibility,
-and optional plan/unscheduled data.
+In `src/frontend`, copy `.env.example` to `.env.local` if it does not
+already exist. Set `VITE_GOOGLE_MAPS_API_KEY` in `.env.local` to your
+Google Maps API key. Keep `.env.local` out of Git and leave the key
+blank in `.env.example`.
 
-All IDs, costs and schedules are demo data. The temporary SchematicMap plots
-coordinates and straight connections; it is not Google Maps or road directions.
-No key or backend is required for the preview.
+Run `npm run dev` and open the printed Local URL with `/dev/map`
+appended, usually `http://localhost:5173/dev/map`. If your key uses
+website restrictions, authorize the local origin you use, including
+its port. Restart the dev server after changing `.env.local`.
+
+This development-only preview uses demo itinerary data and does not
+require a backend. The default fixture has two days. Expand
+**Development test scenarios** to try missing times, empty days,
+infeasibility, and optional plan data. Dashed lines indicate approximate
+connections for route segments without a polyline.
 
 ## Response and display boundaries
 
@@ -52,7 +58,8 @@ No key or backend is required for the preview.
 ## Steven's map integration
 
 Steven owns `src/features/interactive-map/ItineraryMap.tsx`, its map-specific CSS,
-Google loading, markers, bounds and routes. It has not been created on this branch.
+Google loading, markers, bounds and routes. 
+
 The result page and shared API/data adapters are maintained by Eric.
 
 Use the existing shared types:
@@ -72,14 +79,10 @@ Keep backend order and use the same accommodation for departure/return. Do not
 request itinerary generation from the map. Google routes come from backend
 polylines, with labeled schematic fallback when missing.
 
-Eric will connect the component in both hosts with:
 
-```tsx
-import ItineraryMap from './ItineraryMap.tsx'
-<ItineraryResultView result={result} context={context} MapComponent={ItineraryMap} />
-```
-
-Until then, ItineraryResultView defaults to the separate SchematicMap stand-in.
+`MapPreviewPage.tsx` passes `ItineraryMap` to `ItineraryResultView` as
+`MapComponent`. `ItineraryResultView` uses `SchematicMap` when no map
+component is supplied.
 Map-specific CSS should use its own names to avoid the result/list CSS in map.css.
 
 ## Actual generation page
@@ -95,7 +98,7 @@ Current compatibility: coordinates may come from retained selections, times may
 be null, and legacy `total_known_cost` / `has_unknown_cost` are supported. Do not
 claim strict v0.2 compliance until backend implementation and subteam agreement.
 The request currently uses the existing v0.1 selections/priority fields.
-No browser Maps key has been added; no real Google integration is tested here.
+
 
 ## Manual checks
 
@@ -108,7 +111,8 @@ No browser Maps key has been added; no real Google integration is tested here.
    state/backend, Generate sends one request per click. Check failure/retry and
    previous-result preservation. Live backend checks require team credentials.
 
-Remaining: Steven's real Google map; live backend/optimizer verification; v0.2
+Remaining: live backend/optimizer verification; v0.2
 input UI; final responsive/accessibility review and optional extra POI details.
 Multi-day viewing is supported, not multi-day optimization. One accommodation,
 transport mode and day start apply across dates, consistent with current contract.
+
