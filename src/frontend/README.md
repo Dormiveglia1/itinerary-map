@@ -1,73 +1,114 @@
 # Itinerary Map — frontend
 
-React + TypeScript web client, built with Vite.
-
-## Commands
+React + TypeScript + Vite. Requires Node >=22.12 and npm >=11.
 
 ```sh
-npm install        # install dependencies
-npm run dev        # start the dev server
-npm run build      # type-check and build for production
-npm run lint       # lint with oxlint
+npm ci
+npm run dev
+npm run build
+npm run lint
+node --experimental-strip-types --test tests/itinerary.test.mjs
 ```
 
-Requires Node 22.12+ and npm 11+ (see `engines` in `package.json`).
+In Windows PowerShell, use `npm.cmd` if script execution is restricted.
 
-## Interactive map development preview
+## Preview without backend
 
-From `src/frontend`, run `npm ci` then `npm run dev`. On Windows PowerShell,
-use `npm.cmd` if script execution is restricted. Open the printed Local URL
-with `/dev/map` appended (usually http://localhost:5173/dev/map).
-No backend, Google key, or trip form is needed. This route is development-only;
-it is not available through `npm run preview` or the production build.
+Open the printed Local URL with `/dev/map` appended (usually
+http://localhost:5173/dev/map). Development-only route; unavailable in production.
+The default fixture has two days. Expand Development test scenarios at the bottom
+for missing times, derived arrival/waiting, empty days, no days, infeasibility,
+and optional plan/unscheduled data.
 
-The canvas is a schematic projection of coordinates, not Google Maps or road
-directions. All schedules are synthetic and IDs are not Google Place IDs.
-The existing planning workflow and API types are unchanged.
+All IDs, costs and schedules are demo data. The temporary SchematicMap plots
+coordinates and straight connections; it is not Google Maps or road directions.
+No key or backend is required for the preview.
 
-### Data flow and files
+## Response and display boundaries
 
-`mockItinerary.ts` (map-facing subset of v0.2 REST response)
-→ `toMapItinerary.ts` → `MapItinerary` → `MapPreviewPage.tsx`.
+- `src/api/types.ts`: complete result envelope and plan structure. Optional v0.2
+  additions explicitly accommodate the current v0.1 backend. Request fields stay
+  v0.1; nullable budget/mandatory/cost input UI is not implemented yet.
+- `src/api/itineraryResponse.ts`: validates incoming JSON, including nested fields,
+  coordinates, time values, duplicate daily stops and optional plan. Returns the
+  original object, retaining extra backend fields. This is structural validation,
+  not optimization constraint verification.
+- `src/api/client.ts`: generation receives unknown JSON, validates it, and returns
+  the full result. HTTP, network and invalid-response failures become errors.
+- `mockItinerary.ts`: same result type as the API. Includes totals/algorithm and a
+  plan fixture. Null placeholder times are compatibility cases, not strict v0.2.
+- `toMapItinerary.ts`: extracts one day, keeps visit order, converts field names,
+  and derives arrival/waiting only when input times are known. Missing coordinates
+  use selected search results from context. Invalid/missing coordinates produce a
+  visible location error, never fabricated positions or silently skipped stops.
+- `ItineraryResultView.tsx`: receives the full result and context; owns active day
+  and selected POI. Lists, details and map share the same selection. Changing days
+  clears selection. Totals are trip-wide; legacy known-only costs are labeled.
+- `ItineraryStopList.tsx`, `PoiDetails.tsx`, `format.ts`: list, details and time
+  formatting. Null is Unavailable; zero remains zero.
+- `MapPreviewPage.tsx`: mock scenario controls only. `types.ts` retains MapApiResult
+  as an alias to the shared response type for compatibility with existing imports.
 
-- `types.ts`: proposed REST subset, internal map model and controlled selection
-  interface (`selectedPoiId`, `onSelectPoi`). These are not a full v0.2 API schema.
-- `toMapItinerary.ts`: keeps activity order and polyline values, maps snake_case
-  fields to the map model, and uses accommodation/day start from request context.
-  Missing arrival is derived from previous end + travel; missing waiting is
-  derived from start - arrival. Unknown times remain null. Zero is valid.
-  Returns null for infeasible results or an absent day. Coordinate values are
-  trusted here; runtime API validation remains part of future integration.
-- `mockItinerary.ts`: default two-day itinerary plus scenarios for normal stops with null polylines, derived
-  times, unknown times, an empty day, no days, and an infeasible result.
-- `MapPreviewPage.tsx` / `map.css`: temporary canvas, list and details for
-  checking interactions. Date buttons switch the active day; selection resets
-  when the day or scenario changes. Each day uses the same accommodation and day start.
+## Steven's map integration
 
-### Check the preview
+Steven owns `src/features/interactive-map/ItineraryMap.tsx`, its map-specific CSS,
+Google loading, markers, bounds and routes. It has not been created on this branch.
+The result page and shared API/data adapters are maintained by Eric.
 
-1. Select each numbered marker and each list item; verify both highlight the same
-   stop and update details. Tab to a marker and press Enter to select it.
-   Switch to Day 2: only its two stops and route should appear, numbering restarts
-   at 1, and prior selection clears. Switch back to Day 1 to see its three stops.
-2. Expand Development test scenarios below the preview to switch scenarios.
-   Derived times should match normal times; placeholder times
-   should say Unavailable, while known zero waiting should say 0 min.
-3. Empty/no-days scenarios show an empty state. Infeasible shows the violation
-   and unscheduled place instead of a route.
-4. At a narrow viewport the list should move below the canvas.
-5. Run `npm run build` and `npm run lint` before sharing changes.
+Use the existing shared types:
 
-### Remaining work to discuss with Steven
+```tsx
+import type { ItineraryMapProps } from './types.ts'
+export default function ItineraryMap({ trip, selectedPoiId, onSelectPoi }: ItineraryMapProps) {
+  // Render trip.accommodation and trip.stops. Notify selection via onSelectPoi(id).
+}
+```
 
-- Google Maps loading/configuration, real markers, bounds and map selection.
-- Decode backend polylines; show labeled straight-line fallback when absent.
-- Extract final list/details components using the shared selection interface.
-- Agree optional detail fields, loading/error handling and API validation.
-- Integrate generation into the itinerary page once backend v0.2 is available;
-  update shared API types in coordination with the frontend/backend team.
+`ItineraryMapProps` extends `PoiSelectionProps` and adds `trip: MapItinerary`.
+It is equivalent to `PoiSelectionProps & { trip: MapItinerary }`.
+Selection belongs to the parent; do not maintain a separate selected ID in the map.
+Respond to changed trip data by replacing markers/routes and fitting bounds.
+Keep backend order and use the same accommodation for departure/return. Do not
+request itinerary generation from the map. Google routes come from backend
+polylines, with labeled schematic fallback when missing.
 
-The preview supports selecting a day from `days[]`; it does not generate multi-day
-schedules. Actual routing, HTTP calls and production page integration are not implemented.
-Different accommodation or start times per day are not modeled. The split of remaining work
-is intentionally not assigned yet.
+Eric will connect the component in both hosts with:
+
+```tsx
+import ItineraryMap from './ItineraryMap.tsx'
+<ItineraryResultView result={result} context={context} MapComponent={ItineraryMap} />
+```
+
+Until then, ItineraryResultView defaults to the separate SchematicMap stand-in.
+Map-specific CSS should use its own names to avoid the result/list CSS in map.css.
+
+## Actual generation page
+
+After configuring a trip and selecting places, `/plan/itinerary` offers Generate
+itinerary. Explicit click avoids calling paid services on every mount/refresh.
+The backend must be running on localhost:8000 with its own valid Google key.
+The page provides loading, error/retry, infeasible and empty states. It preserves
+previous results if a retry fails; leaving the page aborts client-side waiting
+(which does not guarantee server-side work is stopped).
+
+Current compatibility: coordinates may come from retained selections, times may
+be null, and legacy `total_known_cost` / `has_unknown_cost` are supported. Do not
+claim strict v0.2 compliance until backend implementation and subteam agreement.
+The request currently uses the existing v0.1 selections/priority fields.
+No browser Maps key has been added; no real Google integration is tested here.
+
+## Manual checks
+
+1. `/dev/map`: select markers/list entries and clear selection; both stay in sync.
+2. Switch Day 1/Day 2: stop count/order, route and date update; selection clears.
+3. Test scenarios: derived times match normal; unknown times say Unavailable;
+   empty/infeasible states show no route; plan fixture displays steps/skipped place.
+4. At 375px wide, the list stacks below the canvas; keyboard focus remains usable.
+5. `/plan/itinerary` without configuration links back to setup. With valid trip
+   state/backend, Generate sends one request per click. Check failure/retry and
+   previous-result preservation. Live backend checks require team credentials.
+
+Remaining: Steven's real Google map; live backend/optimizer verification; v0.2
+input UI; final responsive/accessibility review and optional extra POI details.
+Multi-day viewing is supported, not multi-day optimization. One accommodation,
+transport mode and day start apply across dates, consistent with current contract.

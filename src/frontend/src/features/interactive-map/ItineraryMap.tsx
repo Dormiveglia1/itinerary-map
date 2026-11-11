@@ -11,15 +11,12 @@ import {
   useMap,
   useMapsLibrary,
 } from '@vis.gl/react-google-maps'
-import type { MapItinerary, PoiSelectionProps } from './types.ts'
+import type { ItineraryMapProps, MapItinerary } from './types.ts'
 
-interface ItineraryMapProps extends PoiSelectionProps {
-  itinerary: MapItinerary
-}
 
 interface MapCameraProps {
   itinerary: MapItinerary
-  selectedPoiId: PoiSelectionProps['selectedPoiId']
+  selectedPoiId: ItineraryMapProps['selectedPoiId']
 }
 
 function MapCamera({ itinerary, selectedPoiId }: MapCameraProps) {
@@ -148,7 +145,7 @@ function ItineraryRoute({ itinerary }: { itinerary: MapItinerary }) {
 }
 
 export default function ItineraryMap({
-  itinerary,
+  trip: itinerary,
   selectedPoiId,
   onSelectPoi,
 }: ItineraryMapProps) {
