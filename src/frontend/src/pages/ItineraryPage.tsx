@@ -4,6 +4,7 @@ import { generateItinerary } from '../api/client.ts'
 import type { GenerateRequest, ItineraryResult } from '../api/types.ts'
 import { useTrip } from '../trip/useTrip.ts'
 import ItineraryResultView from '../features/interactive-map/ItineraryResultView.tsx'
+import ItineraryMap from '../features/interactive-map/ItineraryMap.tsx'
 import type { MapInputContext } from '../features/interactive-map/types.ts'
 
 export default function ItineraryPage() {
@@ -63,8 +64,8 @@ function GenerateResult({ request, context }: { request: GenerateRequest; contex
     {loading && <p role="status">Preparing your itinerary. Please wait.</p>}
     {error && <div role="alert"><p>{error}</p>{result && <p>Your previous result is kept below.</p>}</div>}
     {result && <>
-      <p className="map-preview-notice">Location connections are schematic, not road directions. Google Maps integration is pending.</p>
-      <ItineraryResultView key={revision} result={result} context={context} />
+      <p className="map-preview-notice">Dashed lines are approximate connections, not road directions.</p>
+      <ItineraryResultView key={revision} result={result} context={context} MapComponent={ItineraryMap} />
     </>}
     <p><Link to="/plan/places">Back to places</Link> · <Link to="/plan">Edit trip</Link></p>
   </section>
