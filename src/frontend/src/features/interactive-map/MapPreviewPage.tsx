@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import GoogleMapView from './GoogleMapView.tsx'
+import ItineraryMap from './ItineraryMap.tsx'
 import { mockContext, mockScenarios } from './mockItinerary.ts'
 import { toMapItinerary } from './toMapItinerary.ts'
 import type { MapItinerary } from './types.ts'
@@ -126,8 +126,8 @@ function ItineraryPreview({ trip }: { trip: MapItinerary }) {
             border: '1px solid #d8e1e8',
           }}
         >
-          <GoogleMapView
-            trip={trip}
+          <ItineraryMap
+            itinerary={trip}
             selectedPoiId={selectedPoiId}
             onSelectPoi={setSelectedPoiId}
           />

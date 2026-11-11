@@ -1,4 +1,5 @@
 /// <reference types="google.maps" />
+
 import { useEffect } from 'react'
 import {
   APIProvider,
@@ -7,20 +8,18 @@ import {
   Pin,
   useMap,
 } from '@vis.gl/react-google-maps'
-import type { MapItinerary } from './types.ts'
+import type { MapItinerary, PoiSelectionProps } from './types.ts'
 
-interface GoogleMapViewProps {
-  trip: MapItinerary
-  selectedPoiId: string | null
-  onSelectPoi: (id: string | null) => void
+interface ItineraryMapProps extends PoiSelectionProps {
+  itinerary: MapItinerary
 }
 
 interface MapCameraProps {
-  trip: MapItinerary
-  selectedPoiId: string | null
+  itinerary: MapItinerary
+  selectedPoiId: PoiSelectionProps['selectedPoiId']
 }
 
-function MapCamera({ trip, selectedPoiId }: MapCameraProps) {
+function MapCamera({ itinerary, selectedPoiId }: MapCameraProps) {
   const map = useMap()
 
   useEffect(() => {
@@ -29,35 +28,37 @@ function MapCamera({ trip, selectedPoiId }: MapCameraProps) {
     const bounds = new google.maps.LatLngBounds()
 
     bounds.extend({
-      lat: trip.accommodation.lat,
-      lng: trip.accommodation.lng,
+      lat: itinerary.accommodation.lat,
+      lng: itinerary.accommodation.lng,
     })
 
-    trip.stops.forEach((stop) => {
+    itinerary.stops.forEach((stop) => {
       bounds.extend({ lat: stop.lat, lng: stop.lng })
     })
 
     map.fitBounds(bounds, 60)
-  }, [map, trip])
+  }, [map, itinerary])
 
   useEffect(() => {
     if (!map || !selectedPoiId) return
 
-    const stop = trip.stops.find((item) => item.id === selectedPoiId)
+    const stop = itinerary.stops.find(
+      (item) => item.id === selectedPoiId,
+    )
 
     if (stop) {
       map.panTo({ lat: stop.lat, lng: stop.lng })
     }
-  }, [map, trip, selectedPoiId])
+  }, [map, itinerary, selectedPoiId])
 
   return null
 }
 
-export default function GoogleMapView({
-  trip,
+export default function ItineraryMap({
+  itinerary,
   selectedPoiId,
   onSelectPoi,
-}: GoogleMapViewProps) {
+}: ItineraryMapProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
   if (!apiKey) {
@@ -86,21 +87,24 @@ export default function GoogleMapView({
         <Map
           mapId="DEMO_MAP_ID"
           defaultCenter={{
-            lat: trip.accommodation.lat,
-            lng: trip.accommodation.lng,
+            lat: itinerary.accommodation.lat,
+            lng: itinerary.accommodation.lng,
           }}
           defaultZoom={13}
           gestureHandling="cooperative"
           onClick={() => onSelectPoi(null)}
         >
-          <MapCamera trip={trip} selectedPoiId={selectedPoiId} />
+          <MapCamera
+            itinerary={itinerary}
+            selectedPoiId={selectedPoiId}
+          />
 
           <AdvancedMarker
             position={{
-              lat: trip.accommodation.lat,
-              lng: trip.accommodation.lng,
+              lat: itinerary.accommodation.lat,
+              lng: itinerary.accommodation.lng,
             }}
-            title={trip.accommodation.name}
+            title={itinerary.accommodation.name}
           >
             <Pin
               background="#243b53"
@@ -110,7 +114,7 @@ export default function GoogleMapView({
             />
           </AdvancedMarker>
 
-          {trip.stops.map((stop, index) => {
+          {itinerary.stops.map((stop, index) => {
             const isSelected = stop.id === selectedPoiId
 
             return (
@@ -136,3 +140,4 @@ export default function GoogleMapView({
     </APIProvider>
   )
 }
+
