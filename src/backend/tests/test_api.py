@@ -30,6 +30,7 @@ CNT = {
 NOHOURS = {"id": "NOH", "displayName": {"text": "Viewpoint"},
            "location": {"latitude": 43.64, "longitude": -79.38}, "types": ["point_of_interest"]}
 CLOSED = {**CNT, "id": "OLD", "displayName": {"text": "Old Place"}, "businessStatus": "CLOSED_PERMANENTLY"}
+NOLOC = {"id": "NOL", "displayName": {"text": "Somewhere"}, "types": ["point_of_interest"]}
 DINER = {
     "id": "EAT", "displayName": {"text": "Diner"},
     "location": {"latitude": 43.65, "longitude": -79.39},
@@ -37,7 +38,7 @@ DINER = {
     "regularOpeningHours": {"periods": [
         {"open": {"day": d, "hour": 11}, "close": {"day": d, "hour": 22}} for d in range(7)]},
 }
-DETAILS = {p["id"]: p for p in (ROM, CNT, NOHOURS, CLOSED, DINER)}
+DETAILS = {p["id"]: p for p in (ROM, CNT, NOHOURS, CLOSED, NOLOC, DINER)}
 
 TRIP = {
     "city": "Toronto", "timezone": "America/Toronto", "dates": ["2026-11-14"],
@@ -244,6 +245,35 @@ def test_restaurant_hours_narrowed_to_meal_windows(captured):
 def test_restaurant_hours_unchanged_without_meal_windows(captured):
     gen([{"place_id": "EAT", "priority": 6}])
     assert captured["pois"][0]["opening_hours"] == {"2026-11-14": [[660, 1320]]}
+
+
+def test_response_v02_fields(captured):
+    body = gen([{"place_id": "ROM", "priority": 8}, {"place_id": "CNT", "priority": 6},
+                {"place_id": "NOH", "priority": 5}, {"place_id": "NOL", "priority": 5}]).json()
+    day = body["days"][0]
+    rom, cnt = day["activities"]
+    assert (rom["lat"], rom["lng"]) == (43.6677, -79.3948) and cnt["name"] == "CN Tower"
+    # fake optimizer omits arrival/wait: backend fills them per the contract
+    assert rom["arrival"] == 540 + 10 and rom["wait_minutes"] == 600 - 550
+    assert cnt["arrival"] == 720 + 10 and cnt["wait_minutes"] == 730 - 730
+    # polylines are not fetched yet: fields present, null -> map draws straight lines
+    assert rom["route_polyline_before"] is None and cnt["route_polyline_before"] is None
+    assert day["return_route_polyline"] is None
+    unsched = {u["poi_id"]: u for u in body["unscheduled"]}
+    assert unsched["NOH"]["lat"] == 43.64                    # location known -> lat/lng
+    assert "lat" not in unsched["NOL"] and unsched["NOL"]["reason"] == "unreachable"
+
+
+def test_optimizer_v02_fields_pass_through(monkeypatch):
+    monkeypatch.setattr(optimizer_bridge, "_load", lambda: lambda t, p, tt: {
+        "status": "ok", "algorithm": "fake", "total_priority": 8, "total_cost": 25.0,
+        "days": [{"date": "2026-11-14", "return_travel_minutes": 10, "slack_minutes": 99, "activities": [
+            {"poi_id": "ROM", "arrival": 558, "wait_minutes": 42, "start": 600, "end": 720,
+             "travel_minutes_before": 18}]}],
+        "unscheduled": [], "violations": []})
+    day = gen([{"place_id": "ROM", "priority": 8}]).json()["days"][0]
+    act = day["activities"][0]
+    assert (act["arrival"], act["wait_minutes"], day["slack_minutes"]) == (558, 42, 99)
 
 
 # ---------------------------------------------------------------- converters

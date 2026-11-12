@@ -124,6 +124,12 @@ def restrict_to_meal_windows(hours: dict, meal_windows: dict | None) -> dict:
     return out
 
 
+def location_of(place: dict) -> dict:
+    """{"lat", "lng"} for the response, or {} when Google has no location."""
+    loc = place.get("location")
+    return {"lat": loc["latitude"], "lng": loc["longitude"]} if loc else {}
+
+
 def to_search_result(place: dict) -> dict:
     """GET /api/places/search item."""
     return {
