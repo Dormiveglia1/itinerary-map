@@ -6,7 +6,7 @@
 **Time:** 2:00 PM – 2:15 PM
 **Attendees:**
 - **TA:** Amirhossein Sabour
-- **Team Members:** All members attended
+- **Team Members:** Hashim Butt, Rebecca Yang, Yuhao (Eric) Zhang, Xueyan (Steven) Feng, Shaoyuan (Mike) Wu, Eric Lee, Lihan Zhang
 
 **Recorded by:** Shaoyuan Wu  
 
