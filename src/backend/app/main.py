@@ -13,7 +13,7 @@ from . import config
 from .errors import APIError
 from .routes import router
 
-app = FastAPI(title="Itinerary Map API", version="0.1.0")
+app = FastAPI(title="Itinerary Map API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,

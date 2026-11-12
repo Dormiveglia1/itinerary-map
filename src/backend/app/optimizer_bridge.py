@@ -30,5 +30,5 @@ def run(trip: dict, pois: list[dict], travel_times: dict) -> dict:
     result = _load()(trip, pois, travel_times)
     if not isinstance(result, dict) or result.get("status") not in ("ok", "infeasible"):
         raise APIError(500, "optimizer_contract_error",
-                       "Optimizer did not return an ItineraryResult (see Data Contract v0.1).")
+                       "Optimizer did not return an ItineraryResult (see Data Contract v0.2).")
     return result

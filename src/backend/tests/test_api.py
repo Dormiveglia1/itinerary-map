@@ -30,7 +30,15 @@ CNT = {
 NOHOURS = {"id": "NOH", "displayName": {"text": "Viewpoint"},
            "location": {"latitude": 43.64, "longitude": -79.38}, "types": ["point_of_interest"]}
 CLOSED = {**CNT, "id": "OLD", "displayName": {"text": "Old Place"}, "businessStatus": "CLOSED_PERMANENTLY"}
-DETAILS = {p["id"]: p for p in (ROM, CNT, NOHOURS, CLOSED)}
+NOLOC = {"id": "NOL", "displayName": {"text": "Somewhere"}, "types": ["point_of_interest"]}
+DINER = {
+    "id": "EAT", "displayName": {"text": "Diner"},
+    "location": {"latitude": 43.65, "longitude": -79.39},
+    "types": ["restaurant"], "primaryType": "restaurant",
+    "regularOpeningHours": {"periods": [
+        {"open": {"day": d, "hour": 11}, "close": {"day": d, "hour": 22}} for d in range(7)]},
+}
+DETAILS = {p["id"]: p for p in (ROM, CNT, NOHOURS, CLOSED, NOLOC, DINER)}
 
 TRIP = {
     "city": "Toronto", "timezone": "America/Toronto", "dates": ["2026-11-14"],
@@ -115,13 +123,13 @@ def test_generate_passes_contract_inputs_to_optimizer(captured):
             pace="packed")
     assert r.status_code == 200
     trip, pois, tt = captured["trip"], captured["pois"], captured["travel_times"]
-    assert trip["contract_version"] == "0.1" and "pace" not in trip
+    assert trip["contract_version"] == "0.2" and "pace" not in trip
     assert trip["dates"] == ["2026-11-14"]
     rom, cnt = pois
     assert rom["opening_hours"] == {"2026-11-14": [[600, 1050]]}
     assert rom["visit_minutes"] == 96          # history_museum -> 120, packed x0.8
     assert cnt["visit_minutes"] == 45          # user override wins
-    assert rom["priority"] == 8 and rom["locked"] is None
+    assert rom["priority"] == 8 and rom["locked"] is None and rom["mandatory"] is False
     assert tt["source"] == "google_routes" and "accommodation" in tt["minutes"]
     assert tt["minutes"]["accommodation"]["ROM"] == 10
 
@@ -184,6 +192,9 @@ def test_generate_optimizer_wrong_shape_is_500(monkeypatch):
     ([], {}),                                                           # nothing selected
     ([{"place_id": "ROM", "priority": 5}, {"place_id": "ROM", "priority": 6}], {}),  # duplicate
     ([{"place_id": f"P{i}", "priority": 5} for i in range(21)], {}),    # > 20 places
+    ([{"place_id": f"P{i}", "priority": 9, "mandatory": True} for i in range(6)], {}),  # > 5 mandatory
+    ([{"place_id": "ROM", "priority": 5}], {"dates": ["2026-11-14", "2026-11-15"]}),  # PoC: 1 date
+    ([{"place_id": "ROM", "priority": 5}], {"budget": -1}),
 ])
 def test_generate_invalid_input_is_400(selections, overrides):
     r = gen(selections, **overrides)
@@ -191,7 +202,91 @@ def test_generate_invalid_input_is_400(selections, overrides):
     assert r.json()["error"] == "invalid_input" and r.json()["message"]
 
 
+# ---------------------------------------------------------------- contract v0.2
+
+def test_budget_null_means_no_limit(captured):
+    trip = {k: v for k, v in TRIP.items() if k != "budget"}
+    r = client.post("/api/itineraries/generate",
+                    json={"trip": trip, "selections": [{"place_id": "ROM", "priority": 8}]})
+    assert r.status_code == 200 and captured["trip"]["budget"] is None
+    assert gen([{"place_id": "ROM", "priority": 8}], budget=None).status_code == 200
+
+
+def test_mandatory_is_passed_to_optimizer(captured):
+    gen([{"place_id": "ROM", "priority": 9, "mandatory": True}, {"place_id": "CNT", "priority": 6}])
+    assert [(p["id"], p["mandatory"]) for p in captured["pois"]] == [("ROM", True), ("CNT", False)]
+
+
+def test_mandatory_place_backend_cannot_use_is_infeasible(monkeypatch, captured):
+    matrix_calls = []
+    monkeypatch.setattr(google_client, "route_matrix", lambda *a, **k: matrix_calls.append(a))
+    r = gen([{"place_id": "ROM", "priority": 6}, {"place_id": "NOH", "priority": 9, "mandatory": True}])
+    body = r.json()
+    assert r.status_code == 200 and body["status"] == "infeasible" and body["algorithm"] is None
+    assert body["days"] == []
+    assert body["violations"][0]["code"] == "MANDATORY_CANNOT_FIT"
+    assert body["violations"][0]["poi_ids"] == ["NOH"] and "Viewpoint" in body["violations"][0]["message"]
+    assert matrix_calls == [] and captured == {}  # no Routes call, optimizer not run
+
+
+def test_all_unusable_uses_v02_code(captured):
+    body = gen([{"place_id": "NOH", "priority": 5}]).json()
+    assert body["violations"][0]["code"] == "NO_FEASIBLE_ITINERARY"
+
+
+def test_restaurant_hours_narrowed_to_meal_windows(captured):
+    gen([{"place_id": "EAT", "priority": 6}, {"place_id": "CNT", "priority": 6}],
+        meal_windows={"lunch": [690, 810], "dinner": [1050, 1200]})
+    eat, cnt = captured["pois"]
+    assert eat["opening_hours"] == {"2026-11-14": [[690, 810], [1050, 1200]]}
+    assert cnt["opening_hours"] == {"2026-11-14": [[540, 1290]]}  # attractions untouched
+
+
+def test_restaurant_hours_unchanged_without_meal_windows(captured):
+    gen([{"place_id": "EAT", "priority": 6}])
+    assert captured["pois"][0]["opening_hours"] == {"2026-11-14": [[660, 1320]]}
+
+
+def test_response_v02_fields(captured):
+    body = gen([{"place_id": "ROM", "priority": 8}, {"place_id": "CNT", "priority": 6},
+                {"place_id": "NOH", "priority": 5}, {"place_id": "NOL", "priority": 5}]).json()
+    day = body["days"][0]
+    rom, cnt = day["activities"]
+    assert (rom["lat"], rom["lng"]) == (43.6677, -79.3948) and cnt["name"] == "CN Tower"
+    # fake optimizer omits arrival/wait: backend fills them per the contract
+    assert rom["arrival"] == 540 + 10 and rom["wait_minutes"] == 600 - 550
+    assert cnt["arrival"] == 720 + 10 and cnt["wait_minutes"] == 730 - 730
+    # polylines are not fetched yet: fields present, null -> map draws straight lines
+    assert rom["route_polyline_before"] is None and cnt["route_polyline_before"] is None
+    assert day["return_route_polyline"] is None
+    unsched = {u["poi_id"]: u for u in body["unscheduled"]}
+    assert unsched["NOH"]["lat"] == 43.64                    # location known -> lat/lng
+    assert "lat" not in unsched["NOL"] and unsched["NOL"]["reason"] == "unreachable"
+
+
+def test_optimizer_v02_fields_pass_through(monkeypatch):
+    monkeypatch.setattr(optimizer_bridge, "_load", lambda: lambda t, p, tt: {
+        "status": "ok", "algorithm": "fake", "total_priority": 8, "total_cost": 25.0,
+        "days": [{"date": "2026-11-14", "return_travel_minutes": 10, "slack_minutes": 99, "activities": [
+            {"poi_id": "ROM", "arrival": 558, "wait_minutes": 42, "start": 600, "end": 720,
+             "travel_minutes_before": 18}]}],
+        "unscheduled": [], "violations": []})
+    day = gen([{"place_id": "ROM", "priority": 8}]).json()["days"][0]
+    act = day["activities"][0]
+    assert (act["arrival"], act["wait_minutes"], day["slack_minutes"]) == (558, 42, 99)
+
+
 # ---------------------------------------------------------------- converters
+
+def test_meal_window_intersection():
+    hours = {"d1": [[660, 1320]], "d2": [], "d3": [[700, 760], [1100, 1400]]}
+    out = converters.restrict_to_meal_windows(hours, {"lunch": [690, 810], "dinner": [1050, 1200]})
+    assert out == {"d1": [[690, 810], [1050, 1200]], "d2": [], "d3": [[700, 760], [1100, 1200]]}
+    assert converters.restrict_to_meal_windows(hours, None) is hours
+    # overlapping windows are merged
+    assert converters.restrict_to_meal_windows({"d": [[0, 1440]]}, {"lunch": [600, 800], "dinner": [700, 900]}) \
+        == {"d": [[600, 900]]}
+
 
 def test_overnight_and_24h_hours():
     bar = {"regularOpeningHours": {"periods": [

@@ -1,4 +1,4 @@
-"""PoC endpoints (Data Contract v0.1, part 2)."""
+"""PoC endpoints (Data Contract v0.2, part 2)."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -39,6 +39,30 @@ def _transit_departure(trip: dict) -> str | None:
     return dt.isoformat() if dt > datetime.now(tz) else None
 
 
+def _infeasible(unscheduled: list[dict], violations: list[dict]) -> dict:
+    """Result decided by the backend before running the optimizer (algorithm = null)."""
+    return {
+        "status": "infeasible",
+        "algorithm": None,
+        "total_priority": 0,
+        "total_cost": 0.0,
+        "days": [],
+        "unscheduled": unscheduled,
+        "violations": violations,
+    }
+
+
+def _fill_arrival(day: dict, day_start: int) -> None:
+    """v0.2 arrival / wait_minutes, computed as the contract says if the optimizer left them out."""
+    prev_end = day_start
+    for act in day.get("activities", []):
+        if "arrival" not in act and "travel_minutes_before" in act:
+            act["arrival"] = prev_end + act["travel_minutes_before"]
+        if "wait_minutes" not in act and "arrival" in act and "start" in act:
+            act["wait_minutes"] = act["start"] - act["arrival"]
+        prev_end = act.get("end", prev_end)
+
+
 @router.post("/itineraries/generate")
 def generate_itinerary(req: GenerateRequest):
     """Fetch place details, build POIs + TravelTimes, call the optimizer, return ItineraryResult.
@@ -51,27 +75,36 @@ def generate_itinerary(req: GenerateRequest):
     with ThreadPoolExecutor(max_workers=8) as pool:
         places = list(pool.map(lambda sel: google_client.place_details(sel.place_id), req.selections))
 
-    pois, excluded = [], []
+    pois, excluded, locations, names = [], [], {}, {}
+    mandatory_excluded = []
     for sel, place in zip(req.selections, places):
         if place is None:
             raise APIError(400, "invalid_input", f"selections: unknown place_id {sel.place_id!r}")
-        poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace)
+        names[sel.place_id] = converters.display_name(place)
+        locations[sel.place_id] = converters.location_of(place)
+        poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace,
+                                        mandatory=sel.mandatory, meal_windows=trip.get("meal_windows"))
         if poi:
             pois.append(poi)
         else:
-            excluded.append({"poi_id": sel.place_id, "name": converters.display_name(place), "reason": reason})
+            excluded.append({"poi_id": sel.place_id, "name": names[sel.place_id],
+                             **locations[sel.place_id], "reason": reason})
+            if sel.mandatory:
+                mandatory_excluded.append(sel.place_id)
 
+    # v0.2: a mandatory place the backend can't use makes the whole trip infeasible.
+    if mandatory_excluded:
+        listed = ", ".join(names[i] or i for i in mandatory_excluded)
+        return _infeasible(excluded, [{
+            "code": "MANDATORY_CANNOT_FIT",
+            "message": f"Essential place can't be visited on the trip dates: {listed}.",
+            "poi_ids": mandatory_excluded,
+        }])
     if not pois:
-        return {
-            "status": "infeasible",
-            "algorithm": None,
-            "total_priority": 0,
-            "total_cost": 0.0,
-            "days": [],
-            "unscheduled": excluded,
-            "violations": [{"code": "no_usable_places",
-                            "message": "None of the selected places can be visited on the trip dates."}],
-        }
+        return _infeasible(excluded, [{
+            "code": "NO_FEASIBLE_ITINERARY",
+            "message": "None of the selected places can be visited on the trip dates.",
+        }])
 
     nodes = [{"id": ACCOMMODATION_ID, **trip["accommodation"]}] + \
             [{"id": p["id"], "lat": p["lat"], "lng": p["lng"]} for p in pois]
@@ -83,13 +116,21 @@ def generate_itinerary(req: GenerateRequest):
 
     result = optimizer_bridge.run(trip, pois, travel_times)
 
-    # Add display names; merge places the backend excluded before optimisation.
-    names = {p["id"]: p["name"] for p in pois}
-    for day in result.get("days") or []:
+    # Add display fields; merge places the backend excluded before optimisation.
+    days = result.get("days") or []
+    for day in days:
+        _fill_arrival(day, trip["day_start"])
+        day.setdefault("return_route_polyline", None)  # polylines not fetched yet -> straight lines
         for act in day.get("activities", []):
             act.setdefault("name", names.get(act.get("poi_id"), ""))
+            for k, v in locations.get(act.get("poi_id"), {}).items():
+                act.setdefault(k, v)
+            act.setdefault("route_polyline_before", None)
+
     unscheduled = list(result.get("unscheduled") or [])
     for u in unscheduled:
         u.setdefault("name", names.get(u.get("poi_id"), ""))
+        for k, v in locations.get(u.get("poi_id"), {}).items():
+            u.setdefault(k, v)
     result["unscheduled"] = unscheduled + excluded
     return result
