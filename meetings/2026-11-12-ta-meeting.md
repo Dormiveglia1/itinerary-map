@@ -1,4 +1,4 @@
-# TA Meeting #1 — Meeting Minutes
+# TA Meeting — Meeting Minutes
 
 **Project:** Itinerary Map — Group 18  
 **Course:** COMPSCI 4ZP6  
