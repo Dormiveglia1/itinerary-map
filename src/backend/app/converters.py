@@ -1,4 +1,4 @@
-"""Google Places JSON -> Data Contract v0.1 structures.
+"""Google Places JSON -> Data Contract v0.2 structures.
 
 The optimizer never sees Google's formats; everything is converted here.
 """
@@ -113,7 +113,8 @@ def to_search_result(place: dict) -> dict:
 
 
 def to_poi(place: dict, dates: list[str], priority: int,
-           visit_minutes: int | None = None, pace: str = "normal") -> tuple[dict | None, str | None]:
+           visit_minutes: int | None = None, pace: str = "normal",
+           mandatory: bool = False) -> tuple[dict | None, str | None]:
     """Google place -> contract POI, or (None, unscheduled reason) if it must be excluded."""
     if place.get("businessStatus", "OPERATIONAL") != "OPERATIONAL":
         return None, "closed_on_trip_dates"
@@ -130,6 +131,7 @@ def to_poi(place: dict, dates: list[str], priority: int,
         "lat": place["location"]["latitude"],
         "lng": place["location"]["longitude"],
         "priority": priority,
+        "mandatory": mandatory,
         "visit_minutes": visit_minutes if visit_minutes is not None else default_visit_minutes(place, pace),
         "cost": default_cost(place, kind),
         "opening_hours": hours,

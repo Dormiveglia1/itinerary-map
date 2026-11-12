@@ -1,4 +1,4 @@
-"""PoC endpoints (Data Contract v0.1, part 2)."""
+"""PoC endpoints (Data Contract v0.2, part 2)."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -55,7 +55,8 @@ def generate_itinerary(req: GenerateRequest):
     for sel, place in zip(req.selections, places):
         if place is None:
             raise APIError(400, "invalid_input", f"selections: unknown place_id {sel.place_id!r}")
-        poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace)
+        poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace,
+                                        mandatory=sel.mandatory)
         if poi:
             pois.append(poi)
         else:

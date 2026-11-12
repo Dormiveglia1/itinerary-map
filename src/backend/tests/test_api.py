@@ -115,13 +115,13 @@ def test_generate_passes_contract_inputs_to_optimizer(captured):
             pace="packed")
     assert r.status_code == 200
     trip, pois, tt = captured["trip"], captured["pois"], captured["travel_times"]
-    assert trip["contract_version"] == "0.1" and "pace" not in trip
+    assert trip["contract_version"] == "0.2" and "pace" not in trip
     assert trip["dates"] == ["2026-11-14"]
     rom, cnt = pois
     assert rom["opening_hours"] == {"2026-11-14": [[600, 1050]]}
     assert rom["visit_minutes"] == 96          # history_museum -> 120, packed x0.8
     assert cnt["visit_minutes"] == 45          # user override wins
-    assert rom["priority"] == 8 and rom["locked"] is None
+    assert rom["priority"] == 8 and rom["locked"] is None and rom["mandatory"] is False
     assert tt["source"] == "google_routes" and "accommodation" in tt["minutes"]
     assert tt["minutes"]["accommodation"]["ROM"] == 10
 
@@ -184,11 +184,29 @@ def test_generate_optimizer_wrong_shape_is_500(monkeypatch):
     ([], {}),                                                           # nothing selected
     ([{"place_id": "ROM", "priority": 5}, {"place_id": "ROM", "priority": 6}], {}),  # duplicate
     ([{"place_id": f"P{i}", "priority": 5} for i in range(21)], {}),    # > 20 places
+    ([{"place_id": f"P{i}", "priority": 9, "mandatory": True} for i in range(6)], {}),  # > 5 mandatory
+    ([{"place_id": "ROM", "priority": 5}], {"dates": ["2026-11-14", "2026-11-15"]}),  # PoC: 1 date
+    ([{"place_id": "ROM", "priority": 5}], {"budget": -1}),
 ])
 def test_generate_invalid_input_is_400(selections, overrides):
     r = gen(selections, **overrides)
     assert r.status_code == 400, r.text
     assert r.json()["error"] == "invalid_input" and r.json()["message"]
+
+
+# ---------------------------------------------------------------- contract v0.2
+
+def test_budget_null_means_no_limit(captured):
+    trip = {k: v for k, v in TRIP.items() if k != "budget"}
+    r = client.post("/api/itineraries/generate",
+                    json={"trip": trip, "selections": [{"place_id": "ROM", "priority": 8}]})
+    assert r.status_code == 200 and captured["trip"]["budget"] is None
+    assert gen([{"place_id": "ROM", "priority": 8}], budget=None).status_code == 200
+
+
+def test_mandatory_is_passed_to_optimizer(captured):
+    gen([{"place_id": "ROM", "priority": 9, "mandatory": True}, {"place_id": "CNT", "priority": 6}])
+    assert [(p["id"], p["mandatory"]) for p in captured["pois"]] == [("ROM", True), ("CNT", False)]
 
 
 # ---------------------------------------------------------------- converters

@@ -1,4 +1,4 @@
-"""Request/response models for the frontend <-> backend contract (Data Contract v0.1, part 2)."""
+"""Request/response models for the frontend <-> backend contract (Data Contract v0.2, part 2)."""
 
 from datetime import date
 from typing import Literal
@@ -6,8 +6,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-CONTRACT_VERSION = "0.1"
+CONTRACT_VERSION = "0.2"
 MAX_SELECTIONS = 20  # NFR-P2 benchmark size
+MAX_MANDATORY = 5    # contract v0.2 limits (to confirm); the optimizer's exhaustive ordering supports 7
+MAX_DATES = 1        # PoC is one day (contract v0.2 limits, open question 3)
 
 
 class LatLng(BaseModel):
@@ -20,10 +22,11 @@ class TripIn(BaseModel):
 
     city: str = Field(min_length=1)
     timezone: str = "America/Toronto"
-    dates: list[date] = Field(min_length=1)
+    dates: list[date] = Field(min_length=1, max_length=MAX_DATES)
     day_start: int = Field(ge=0, le=1440, description="minutes since midnight, e.g. 540 = 09:00")
     day_end: int = Field(ge=0, le=1440)
-    budget: float = Field(ge=0)
+    budget: float | None = Field(default=None, ge=0,
+                                 description="total trip budget per person (CAD); null = no limit")
     transport_mode: Literal["walk", "drive", "transit"]
     accommodation: LatLng
     meal_windows: dict[Literal["lunch", "dinner"], tuple[int, int]] | None = None
@@ -71,6 +74,7 @@ class Selection(BaseModel):
     place_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,256}$")  # interpolated into the Place Details URL path
     priority: int = Field(ge=1, le=10)
     visit_minutes: int | None = Field(default=None, ge=0, le=1440)
+    mandatory: bool = False  # "Essential" in the UI: must appear in the itinerary, or the result is infeasible
 
 
 class GenerateRequest(BaseModel):
@@ -82,6 +86,8 @@ class GenerateRequest(BaseModel):
         ids = [s.place_id for s in self.selections]
         if len(set(ids)) != len(ids):
             raise ValueError("each place_id may be selected only once")
+        if sum(s.mandatory for s in self.selections) > MAX_MANDATORY:
+            raise ValueError(f"at most {MAX_MANDATORY} places can be mandatory")
         return self
 
 
