@@ -209,6 +209,23 @@ def test_mandatory_is_passed_to_optimizer(captured):
     assert [(p["id"], p["mandatory"]) for p in captured["pois"]] == [("ROM", True), ("CNT", False)]
 
 
+def test_mandatory_place_backend_cannot_use_is_infeasible(monkeypatch, captured):
+    matrix_calls = []
+    monkeypatch.setattr(google_client, "route_matrix", lambda *a, **k: matrix_calls.append(a))
+    r = gen([{"place_id": "ROM", "priority": 6}, {"place_id": "NOH", "priority": 9, "mandatory": True}])
+    body = r.json()
+    assert r.status_code == 200 and body["status"] == "infeasible" and body["algorithm"] is None
+    assert body["days"] == []
+    assert body["violations"][0]["code"] == "MANDATORY_CANNOT_FIT"
+    assert body["violations"][0]["poi_ids"] == ["NOH"] and "Viewpoint" in body["violations"][0]["message"]
+    assert matrix_calls == [] and captured == {}  # no Routes call, optimizer not run
+
+
+def test_all_unusable_uses_v02_code(captured):
+    body = gen([{"place_id": "NOH", "priority": 5}]).json()
+    assert body["violations"][0]["code"] == "NO_FEASIBLE_ITINERARY"
+
+
 # ---------------------------------------------------------------- converters
 
 def test_overnight_and_24h_hours():

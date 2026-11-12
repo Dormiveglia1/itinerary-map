@@ -39,6 +39,19 @@ def _transit_departure(trip: dict) -> str | None:
     return dt.isoformat() if dt > datetime.now(tz) else None
 
 
+def _infeasible(unscheduled: list[dict], violations: list[dict]) -> dict:
+    """Result decided by the backend before running the optimizer (algorithm = null)."""
+    return {
+        "status": "infeasible",
+        "algorithm": None,
+        "total_priority": 0,
+        "total_cost": 0.0,
+        "days": [],
+        "unscheduled": unscheduled,
+        "violations": violations,
+    }
+
+
 @router.post("/itineraries/generate")
 def generate_itinerary(req: GenerateRequest):
     """Fetch place details, build POIs + TravelTimes, call the optimizer, return ItineraryResult.
@@ -51,28 +64,34 @@ def generate_itinerary(req: GenerateRequest):
     with ThreadPoolExecutor(max_workers=8) as pool:
         places = list(pool.map(lambda sel: google_client.place_details(sel.place_id), req.selections))
 
-    pois, excluded = [], []
+    pois, excluded, names = [], [], {}
+    mandatory_excluded = []
     for sel, place in zip(req.selections, places):
         if place is None:
             raise APIError(400, "invalid_input", f"selections: unknown place_id {sel.place_id!r}")
+        names[sel.place_id] = converters.display_name(place)
         poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace,
                                         mandatory=sel.mandatory)
         if poi:
             pois.append(poi)
         else:
-            excluded.append({"poi_id": sel.place_id, "name": converters.display_name(place), "reason": reason})
+            excluded.append({"poi_id": sel.place_id, "name": names[sel.place_id], "reason": reason})
+            if sel.mandatory:
+                mandatory_excluded.append(sel.place_id)
 
+    # v0.2: a mandatory place the backend can't use makes the whole trip infeasible.
+    if mandatory_excluded:
+        listed = ", ".join(names[i] or i for i in mandatory_excluded)
+        return _infeasible(excluded, [{
+            "code": "MANDATORY_CANNOT_FIT",
+            "message": f"Essential place can't be visited on the trip dates: {listed}.",
+            "poi_ids": mandatory_excluded,
+        }])
     if not pois:
-        return {
-            "status": "infeasible",
-            "algorithm": None,
-            "total_priority": 0,
-            "total_cost": 0.0,
-            "days": [],
-            "unscheduled": excluded,
-            "violations": [{"code": "no_usable_places",
-                            "message": "None of the selected places can be visited on the trip dates."}],
-        }
+        return _infeasible(excluded, [{
+            "code": "NO_FEASIBLE_ITINERARY",
+            "message": "None of the selected places can be visited on the trip dates.",
+        }])
 
     nodes = [{"id": ACCOMMODATION_ID, **trip["accommodation"]}] + \
             [{"id": p["id"], "lat": p["lat"], "lng": p["lng"]} for p in pois]
@@ -85,7 +104,6 @@ def generate_itinerary(req: GenerateRequest):
     result = optimizer_bridge.run(trip, pois, travel_times)
 
     # Add display names; merge places the backend excluded before optimisation.
-    names = {p["id"]: p["name"] for p in pois}
     for day in result.get("days") or []:
         for act in day.get("activities", []):
             act.setdefault("name", names.get(act.get("poi_id"), ""))
