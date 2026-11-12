@@ -30,7 +30,14 @@ CNT = {
 NOHOURS = {"id": "NOH", "displayName": {"text": "Viewpoint"},
            "location": {"latitude": 43.64, "longitude": -79.38}, "types": ["point_of_interest"]}
 CLOSED = {**CNT, "id": "OLD", "displayName": {"text": "Old Place"}, "businessStatus": "CLOSED_PERMANENTLY"}
-DETAILS = {p["id"]: p for p in (ROM, CNT, NOHOURS, CLOSED)}
+DINER = {
+    "id": "EAT", "displayName": {"text": "Diner"},
+    "location": {"latitude": 43.65, "longitude": -79.39},
+    "types": ["restaurant"], "primaryType": "restaurant",
+    "regularOpeningHours": {"periods": [
+        {"open": {"day": d, "hour": 11}, "close": {"day": d, "hour": 22}} for d in range(7)]},
+}
+DETAILS = {p["id"]: p for p in (ROM, CNT, NOHOURS, CLOSED, DINER)}
 
 TRIP = {
     "city": "Toronto", "timezone": "America/Toronto", "dates": ["2026-11-14"],
@@ -226,7 +233,30 @@ def test_all_unusable_uses_v02_code(captured):
     assert body["violations"][0]["code"] == "NO_FEASIBLE_ITINERARY"
 
 
+def test_restaurant_hours_narrowed_to_meal_windows(captured):
+    gen([{"place_id": "EAT", "priority": 6}, {"place_id": "CNT", "priority": 6}],
+        meal_windows={"lunch": [690, 810], "dinner": [1050, 1200]})
+    eat, cnt = captured["pois"]
+    assert eat["opening_hours"] == {"2026-11-14": [[690, 810], [1050, 1200]]}
+    assert cnt["opening_hours"] == {"2026-11-14": [[540, 1290]]}  # attractions untouched
+
+
+def test_restaurant_hours_unchanged_without_meal_windows(captured):
+    gen([{"place_id": "EAT", "priority": 6}])
+    assert captured["pois"][0]["opening_hours"] == {"2026-11-14": [[660, 1320]]}
+
+
 # ---------------------------------------------------------------- converters
+
+def test_meal_window_intersection():
+    hours = {"d1": [[660, 1320]], "d2": [], "d3": [[700, 760], [1100, 1400]]}
+    out = converters.restrict_to_meal_windows(hours, {"lunch": [690, 810], "dinner": [1050, 1200]})
+    assert out == {"d1": [[690, 810], [1050, 1200]], "d2": [], "d3": [[700, 760], [1100, 1200]]}
+    assert converters.restrict_to_meal_windows(hours, None) is hours
+    # overlapping windows are merged
+    assert converters.restrict_to_meal_windows({"d": [[0, 1440]]}, {"lunch": [600, 800], "dinner": [700, 900]}) \
+        == {"d": [[600, 900]]}
+
 
 def test_overnight_and_24h_hours():
     bar = {"regularOpeningHours": {"periods": [

@@ -71,7 +71,7 @@ def generate_itinerary(req: GenerateRequest):
             raise APIError(400, "invalid_input", f"selections: unknown place_id {sel.place_id!r}")
         names[sel.place_id] = converters.display_name(place)
         poi, reason = converters.to_poi(place, trip["dates"], sel.priority, sel.visit_minutes, req.trip.pace,
-                                        mandatory=sel.mandatory)
+                                        mandatory=sel.mandatory, meal_windows=trip.get("meal_windows"))
         if poi:
             pois.append(poi)
         else:
