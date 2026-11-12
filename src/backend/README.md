@@ -55,11 +55,12 @@ Returns the contract `ItineraryResult`, plus backend-added fields:
 | Field | Where | What |
 |---|---|---|
 | `name`, `lat`, `lng` | each activity and `unscheduled` item | `lat`/`lng` on `unscheduled` only when the location is known |
-| `route_polyline_before` | each activity | always `null` for now (polylines not fetched yet) -> the map draws a straight line |
-| `return_route_polyline` | each day | always `null` for now, same as above |
+| `route_polyline_before` | each activity | Google encoded polyline of the leg arriving here; `null` if the Routes call failed |
+| `return_route_polyline` | each day | last activity -> accommodation; `null` if failed or the day is empty |
 
 `arrival`, `wait_minutes` (per activity) and `slack_minutes` (per day) come from the optimizer; if an optimizer
-leaves out `arrival`/`wait_minutes`, the backend computes them as the contract says.
+leaves out `arrival`/`wait_minutes`, the backend computes them as the contract says. Legs per day:
+`accommodation -> A1 -> ... -> An -> accommodation`, one Routes call each, only for the final itinerary.
 
 Places the backend could not use appear in `unscheduled`: closed or no opening hours -> `closed_on_trip_dates`,
 no location -> `unreachable`. If one of them is **mandatory**, the backend returns `infeasible` with
@@ -79,7 +80,7 @@ no location -> `unreachable`. If one of them is **mandatory**, the backend retur
 app/
   main.py             FastAPI app, CORS, error handlers
   routes.py           /api/places/search, /api/itineraries/generate
-  google_client.py    only module that calls Google (Places New, Routes matrix, batching)
+  google_client.py    only module that calls Google (Places New, Routes matrix + per-leg polylines)
   converters.py       Google JSON -> contract POI (opening hours per date, defaults)
   schemas.py          request validation (Pydantic)
   optimizer_bridge.py imports generate_itinerary from src/optimization
@@ -95,6 +96,7 @@ cd src/backend && python -m pytest -q
 ## Notes
 - Google place details must not be stored permanently (SRS §7). Only Place IDs may be persisted.
 - Transit travel times are estimated for day 1 at `day_start`; the matrix is batched under Google's 100-element transit limit.
-- Not yet in this backend (contract v0.2): `visit_range` (default ranges are open question 4), `plan` (#26) and real route polylines
-  (fields are returned as `null`).
+  Transit polylines use each leg's own departure time.
+- `ROUTE_POLYLINES=0` in `.env` skips the per-leg Routes calls (polylines are `null`, the map draws straight lines).
+- Not yet in this backend (contract v0.2): `visit_range` (default ranges are open question 4) and `plan` (#26).
 - Unknown cost: attractions default to $0, restaurants use a price-level estimate (contract open question 1).

@@ -24,3 +24,7 @@ CORS_ORIGINS = [
 OPTIMIZER_MODULE = os.getenv("OPTIMIZER_MODULE", "optimization")
 
 GOOGLE_TIMEOUT_SEC = float(os.getenv("GOOGLE_TIMEOUT_SEC", "15"))
+
+# Fetch a Google polyline for every leg of the final itinerary (one Routes call per leg).
+# Off -> route polylines are null and the map draws straight lines.
+ROUTE_POLYLINES = os.getenv("ROUTE_POLYLINES", "1").strip().lower() not in ("0", "false", "no", "off")
