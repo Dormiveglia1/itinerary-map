@@ -1,5 +1,5 @@
-// Frontend view of the backend API, following the data contract
-// (docs/data-contract.md, v0.1). Times of day are integer minutes since local
+// Backend response includes v0.2 additions with explicit v0.1/placeholder compatibility.
+// Requests remain v0.1 until backend support lands. Times are integer minutes since local
 // midnight, dates are ISO `YYYY-MM-DD` in the city's time zone, money is CAD.
 
 export type TransportMode = 'walk' | 'drive' | 'transit'
@@ -62,15 +62,22 @@ export interface GenerateRequest {
 export interface Activity {
   poi_id: string
   name: string
-  start: number
-  end: number
-  travel_minutes_before: number
+  lat?: number
+  lng?: number
+  start: number | null
+  end: number | null
+  travel_minutes_before: number | null
+  arrival?: number | null
+  wait_minutes?: number | null
+  route_polyline_before?: string | null
 }
 
 export interface ItineraryDay {
   date: string
   activities: Activity[]
-  return_travel_minutes: number
+  return_travel_minutes: number | null
+  return_route_polyline?: string | null
+  slack_minutes?: number | null
 }
 
 export type UnscheduledReason =
@@ -82,6 +89,8 @@ export type UnscheduledReason =
 export interface Unscheduled {
   poi_id: string
   name?: string
+  lat?: number
+  lng?: number
   reason: UnscheduledReason
 }
 
@@ -89,6 +98,25 @@ export interface Violation {
   code: string
   // Shown to the user.
   message: string
+  poi_ids?: string[]
+}
+
+export interface ItineraryPlan {
+  days: {
+    date: string
+    steps: {
+      time: number
+      kind: 'depart' | 'travel' | 'wait' | 'visit' | 'return'
+      text: string
+      warning?: string | null
+    }[]
+    summary: {
+      stops: number
+      travel_minutes: number
+      cost: number
+      slack_minutes: number
+    }
+  }[]
 }
 
 // "infeasible" is an expected outcome (no schedule fits the constraints), not
@@ -97,8 +125,12 @@ export interface ItineraryResult {
   status: 'ok' | 'infeasible'
   algorithm: string | null
   total_priority: number
-  total_cost: number
+  // v0.2 target: total_cost. Legacy optimizer currently sends the two fields below.
+  total_cost?: number
+  total_known_cost?: number
+  has_unknown_cost?: boolean
   days: ItineraryDay[]
   unscheduled: Unscheduled[]
   violations: Violation[]
+  plan?: ItineraryPlan | null
 }
