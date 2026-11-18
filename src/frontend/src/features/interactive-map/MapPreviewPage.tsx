@@ -5,7 +5,7 @@ import ItineraryResultView from './ItineraryResultView.tsx'
 import './map.css'
 
 export default function MapPreviewPage() {
-  const [scenario, setScenario] = useState('multiDay')
+  const [scenario, setScenario] = useState('withRoutes')
   return <section className="map-preview">
     <h1>Interactive map preview</h1>
     <p className="map-preview-notice">Demo itinerary data · Google Maps base map.</p>
