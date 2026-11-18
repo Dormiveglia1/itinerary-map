@@ -1,4 +1,4 @@
-"""Errors returned to the client as {"error": code, "message": text} (Data Contract v0.1)."""
+"""Errors returned to the client as {"error": code, "message": text} (Data Contract v0.2)."""
 
 
 class APIError(Exception):

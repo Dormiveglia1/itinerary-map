@@ -1,4 +1,4 @@
-"""Thin client for Google Places API (New) and Routes API computeRouteMatrix.
+"""Thin client for Google Places API (New) and Routes API (computeRouteMatrix, computeRoutes).
 
 Only this module talks to Google. Everything it returns is raw Google JSON;
 conversion to Data Contract structures lives in converters.py.
@@ -14,6 +14,7 @@ from .errors import APIError, GoogleAPIError
 PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 PLACE_DETAILS_URL = "https://places.googleapis.com/v1/places/{place_id}"
 MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
+ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 
 # Search only needs what the picker shows -> cheaper SKU (no opening hours / price).
 SEARCH_FIELDS = ",".join([
@@ -26,6 +27,7 @@ DETAILS_FIELDS = ",".join([
     "regularOpeningHours", "priceLevel", "businessStatus",
 ])
 MATRIX_FIELDS = "originIndex,destinationIndex,duration,status,condition"
+ROUTE_FIELDS = "routes.polyline.encodedPolyline"
 
 MODE_TO_GOOGLE = {"walk": "WALK", "drive": "DRIVE", "transit": "TRANSIT"}
 ELEMENT_LIMIT = {"walk": 625, "drive": 625, "transit": 100}  # origins x destinations per request
@@ -108,3 +110,27 @@ def route_matrix(nodes: list[dict], mode: str, departure_iso: str | None = None)
             secs = int(str(el.get("duration", "0s")).rstrip("s"))
             minutes[a][b] = math.ceil(secs / 60)
     return minutes
+
+
+def route_polyline(origin: dict, destination: dict, mode: str, departure_iso: str | None = None) -> str | None:
+    """Encoded polyline (precision 5) for one leg, or None if Google has no route or fails.
+
+    Never raises: a missing polyline only means the map draws a straight line (contract v0.2).
+    origin / destination: {"id", "lat", "lng"} as in route_matrix.
+    """
+    body = {
+        "origin": _waypoint(origin)["waypoint"],
+        "destination": _waypoint(destination)["waypoint"],
+        "travelMode": MODE_TO_GOOGLE[mode],
+        "polylineEncoding": "ENCODED_POLYLINE",
+    }
+    if departure_iso:
+        body["departureTime"] = departure_iso
+    try:
+        resp = _request("POST", ROUTES_URL, ROUTE_FIELDS, json=body)
+        if resp.status_code != 200:
+            return None
+        routes = resp.json().get("routes") or []
+        return (routes[0].get("polyline") or {}).get("encodedPolyline") if routes else None
+    except (APIError, ValueError):
+        return None

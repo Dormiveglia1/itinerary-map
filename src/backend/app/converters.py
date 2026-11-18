@@ -1,4 +1,4 @@
-"""Google Places JSON -> Data Contract v0.1 structures.
+"""Google Places JSON -> Data Contract v0.2 structures.
 
 The optimizer never sees Google's formats; everything is converted here.
 """
@@ -101,6 +101,35 @@ def resolve_opening_hours(place: dict, dates: list[str]) -> dict | None:
     return out
 
 
+def restrict_to_meal_windows(hours: dict, meal_windows: dict | None) -> dict:
+    """Contract v0.2: a restaurant's hours become their overlap with the meal windows,
+    so the optimizer can only place it at meal times. No meal windows -> unchanged.
+
+    open [[660, 1320]], lunch [690, 810], dinner [1050, 1200] -> [[690, 810], [1050, 1200]]
+    """
+    if not meal_windows:
+        return hours
+    windows = sorted(meal_windows.values())
+    out = {}
+    for ds, intervals in hours.items():
+        overlap = sorted([max(s, ws), min(e, we)] for s, e in intervals for ws, we in windows
+                         if max(s, ws) < min(e, we))
+        merged: list[list[int]] = []
+        for s, e in overlap:  # meal windows may overlap each other
+            if merged and s <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], e)
+            else:
+                merged.append([s, e])
+        out[ds] = merged
+    return out
+
+
+def location_of(place: dict) -> dict:
+    """{"lat", "lng"} for the response, or {} when Google has no location."""
+    loc = place.get("location")
+    return {"lat": loc["latitude"], "lng": loc["longitude"]} if loc else {}
+
+
 def to_search_result(place: dict) -> dict:
     """GET /api/places/search item."""
     return {
@@ -113,7 +142,8 @@ def to_search_result(place: dict) -> dict:
 
 
 def to_poi(place: dict, dates: list[str], priority: int,
-           visit_minutes: int | None = None, pace: str = "normal") -> tuple[dict | None, str | None]:
+           visit_minutes: int | None = None, pace: str = "normal",
+           mandatory: bool = False, meal_windows: dict | None = None) -> tuple[dict | None, str | None]:
     """Google place -> contract POI, or (None, unscheduled reason) if it must be excluded."""
     if place.get("businessStatus", "OPERATIONAL") != "OPERATIONAL":
         return None, "closed_on_trip_dates"
@@ -123,6 +153,8 @@ def to_poi(place: dict, dates: list[str], priority: int,
     if hours is None:  # contract: a missing date means closed
         return None, "closed_on_trip_dates"
     kind = kind_of(place)
+    if kind == "restaurant":
+        hours = restrict_to_meal_windows(hours, meal_windows)
     return {
         "id": place["id"],
         "name": display_name(place),
@@ -130,6 +162,7 @@ def to_poi(place: dict, dates: list[str], priority: int,
         "lat": place["location"]["latitude"],
         "lng": place["location"]["longitude"],
         "priority": priority,
+        "mandatory": mandatory,
         "visit_minutes": visit_minutes if visit_minutes is not None else default_visit_minutes(place, pace),
         "cost": default_cost(place, kind),
         "opening_hours": hours,
