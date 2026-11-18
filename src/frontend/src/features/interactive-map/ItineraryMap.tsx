@@ -198,7 +198,7 @@ export default function ItineraryMap({
   }
 
   return (
-    <APIProvider apiKey={apiKey}>
+    <APIProvider apiKey={apiKey} version="quarterly">
       <MapLoadState>
         <div style={{ width: '100%', height: 490 }}>
           <Map
