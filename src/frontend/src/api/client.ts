@@ -3,6 +3,7 @@ import type {
   ItineraryResult,
   PlaceSearchResult,
 } from './types.ts'
+import { parseItineraryResponse } from './itineraryResponse.ts'
 
 // A failed request. `code` is the backend's error code ("invalid_input",
 // "google_unavailable", ...), or "network_error" when the server wasn't reached.
@@ -53,14 +54,15 @@ export function searchPlaces(
   return request(`/api/places/search?${params}`, { signal })
 }
 
-export function generateItinerary(
+export async function generateItinerary(
   body: GenerateRequest,
   signal?: AbortSignal,
 ): Promise<ItineraryResult> {
-  return request('/api/itineraries/generate', {
+  const result = await request<unknown>('/api/itineraries/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal,
   })
+  return parseItineraryResponse(result)
 }

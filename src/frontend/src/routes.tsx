@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage.tsx'
 import ItineraryPage from './pages/ItineraryPage.tsx'
 import NotFoundPage from './pages/NotFoundPage.tsx'
 import TripSetupPage from './pages/TripSetupPage.tsx'
+import MapPreviewPage from './features/interactive-map/MapPreviewPage.tsx'
 
 export const routes: RouteObject[] = [
   {
@@ -14,6 +15,7 @@ export const routes: RouteObject[] = [
       { path: 'plan', element: <TripSetupPage /> },
       { path: 'plan/places', element: <ChoosePlacesPage /> },
       { path: 'plan/itinerary', element: <ItineraryPage /> },
+      ...(import.meta.env.DEV ? [{ path: 'dev/map', element: <MapPreviewPage /> }] : []),
       { path: '*', element: <NotFoundPage /> },
     ],
   },
