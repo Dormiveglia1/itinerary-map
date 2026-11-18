@@ -1,0 +1,70 @@
+# Build, lint and test every module (SRS §13). Runs on each PR commit and on
+# pushes to develop/main; a failing job should block merging via branch protection.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      # Auto-discovers *.test.mjs etc. (node_modules excluded).
+      - name: Unit tests
+        run: node --experimental-strip-types --test
+      - name: Type-check and build
+        run: npm run build
+
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: src/backend/requirements.txt
+      - run: pip install -r requirements.txt
+      # Google and the optimizer are mocked in tests, so no API key is needed.
+      - name: Tests
+        run: python -m pytest -q
+
+  optimization:
+    name: Optimization (import check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # No unit tests yet; at least make sure the module compiles and exposes
+      # the entry point the backend loads (OPTIMIZER_MODULE=optimization).
+      - name: Import check
+        run: python -c "from optimization import generate_itinerary"
