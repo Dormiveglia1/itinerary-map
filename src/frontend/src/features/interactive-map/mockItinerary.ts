@@ -61,8 +61,23 @@ const fallbackTimes: MapApiResult = {
   })),
 }
 
+// Real Google Routes walking polylines (fetched once, 2026-11-18) so the preview shows routed lines.
+const routePolylines: [string[], string][] = [
+  [["ynliG`uocNTbBDAF\\b@jDTzATjB@?BJc@LACsC~@?CcWfIAB_@L?C{Ad@[Ns@TWBcA\\?D[HgMbE?@O@sAb@i@LqBp@{Af@i@d@W~@Id@Ub@UXU`@a@Nw@\\q@V[LOTcAr@SDo@Ze@LQLs@RS?a@LQLqBh@e@H_Cl@@JU@AIc@Eq@We@_@y@iAWMYCCAk@RIJkDfA_@MMD[j@QFHd@", "wzoiGjtqcNIe@PGZk@LE^LjDgAHKj@SJDV@^Zj@x@d@^p@Vd@D?HTAAKrCu@f@IzAa@PM`@MR?r@SPM`A[RMREbAs@NUt@[n@Sx@VPSAELOb@OBGXBXPBL|@SLQvAe@jAzIv@WVOZKH@tKkDRs@bCy@VI@DRMxGuB@?Df@n@bF", "kdmiG`kqcNo@cFEg@A@a@_D@[FCA_@DAe@{DEBGa@BAUiBbWgI?B\\ItBu@@Bb@MCKdBgAbCcBCIHKp@]H@ZO@FPKAGjB_A@HLGAGf@W~Ao@~Ay@@D\\OK}@c@cDEa@E@Gi@KcAYoBAe@WuBKUKy@Aa@YiCC@Im@C@}AkLGk@u@qFEa@F]EaA@CEU@MDIJEe@uBBAq@cB\\MEI@COa@GB]gAAMmAeEM_@pAc@"], "}cliGnemcNa@LI?u@V@Be@T?ASB_DfA?@]LJt@Qj@g@hBODiAbBS`@IDh@fEHf@A?x@jGHb@A@VrB?JBAf@~DFb@YHaDdAaAVFf@A?~AnL@?Hh@x@fGGBz@~F"],
+  [["ynliG`uocNTbBDAF\\b@jDTzATjB@?V~AC?Ff@`F}AVG?GfBi@@BLCAEdBi@@F\\MAIb@MTAnDgAjDaAVEr@SFG@Hd@OAMbA]p@Od@SpBo@TCPG`@hDE@Mo@EA]F\\~B?`@Vn@CtADDBFXF\\PJ@", "c}jiGjfpcNP?bAVRBDAHRVKn@_APUUiACu@Fo@Rk@pAgCLa@HMb@KPMP]EaA]eA`@OBNj@[AMPIBHVMCGpB{@@FRECUZUt@SH[D]LIDg@FMJEGa@h@O"], "udjiGvfocNi@NEY_AVK}@yA^BNYF?YE[?[I{@Qe@MmAOu@UBs@h@a@B_D|@SF@@UF@@cBd@w@LkA`@?Dm@PCSmA^EV_AZiDdAKH[By@\\EBAEUFBVFMUPEC[?w@XYN?EMF?DkBj@AGaGjBcCt@QLeBh@AC]J?D_F|AUcB"],
+]
+
+const withRoutes: MapApiResult = {
+  ...multiDay,
+  days: multiDay.days.map((day, i) => ({ ...day,
+    return_route_polyline: routePolylines[i][1],
+    activities: day.activities.map((activity, j) => ({ ...activity, route_polyline_before: routePolylines[i][0][j] })),
+  })),
+}
+
 export const mockScenarios: Record<string, { label: string; result: MapApiResult }> = {
-  multiDay: { label: 'Two-day itinerary', result: multiDay },
+  withRoutes: { label: 'Two-day itinerary / Google route polylines', result: withRoutes },
+  multiDay: { label: 'Two-day itinerary / no polylines', result: multiDay },
   normal: { label: 'Scheduled stops / no polylines', result: normal },
   plan: { label: 'Plan and unscheduled place', result: {
     ...normal,
