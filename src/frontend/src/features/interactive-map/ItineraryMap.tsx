@@ -1,6 +1,6 @@
 /// <reference types="google.maps" />
 import type { ReactNode } from 'react'
-import { useEffect, useMemo } from 'react'
+import { Component, useEffect, useMemo } from 'react'
 import {
   APIProvider,
   AdvancedMarker,
@@ -146,6 +146,37 @@ function ItineraryRoute({ itinerary }: { itinerary: MapItinerary }) {
   )
 }
 
+function MapFailure() {
+  return (
+    <div style={{ minHeight: 490, padding: 24 }}>
+      <p role="alert">Google Maps could not load.</p>
+      <button type="button" onClick={() => window.location.reload()}>
+        Retry
+      </button>
+    </div>
+  )
+}
+
+// Google can reject the key (e.g. RefererNotAllowedMapError) after markers are
+// already rendering; its half-initialized marker elements then throw before
+// useApiLoadingStatus reports AUTH_FAILURE. Contain that to the map area so the
+// itinerary list stays usable (NFR-R1).
+class MapErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('Google Maps failed while rendering the itinerary map.', error)
+  }
+
+  render() {
+    return this.state.failed ? <MapFailure /> : this.props.children
+  }
+}
+
 function MapLoadState({ children }: { children: ReactNode }) {
   const status = useApiLoadingStatus()
 
@@ -153,14 +184,7 @@ function MapLoadState({ children }: { children: ReactNode }) {
     status === APILoadingStatus.FAILED ||
     status === APILoadingStatus.AUTH_FAILURE
   ) {
-    return (
-      <div style={{ minHeight: 490, padding: 24 }}>
-        <p role="alert">Google Maps could not load.</p>
-        <button type="button" onClick={() => window.location.reload()}>
-          Retry
-        </button>
-      </div>
-    )
+    return <MapFailure />
   }
 
   if (status !== APILoadingStatus.LOADED) {
@@ -198,6 +222,7 @@ export default function ItineraryMap({
   }
 
   return (
+    <MapErrorBoundary>
     <APIProvider apiKey={apiKey} version="quarterly">
       <MapLoadState>
         <div style={{ width: '100%', height: 490 }}>
@@ -257,5 +282,6 @@ export default function ItineraryMap({
         </div>
       </MapLoadState>
     </APIProvider>
+    </MapErrorBoundary>
   )
 }
