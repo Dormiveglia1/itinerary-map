@@ -64,7 +64,6 @@ function GenerateResult({ request, context }: { request: GenerateRequest; contex
     {loading && <p role="status">Preparing your itinerary. Please wait.</p>}
     {error && <div role="alert"><p>{error}</p>{result && <p>Your previous result is kept below.</p>}</div>}
     {result && <>
-      <p className="map-preview-notice">Dashed lines are approximate connections, not road directions.</p>
       <ItineraryResultView key={revision} result={result} context={context} MapComponent={ItineraryMap} />
     </>}
     <p><Link to="/plan/places">Back to places</Link> · <Link to="/plan">Edit trip</Link></p>
