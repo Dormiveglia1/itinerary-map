@@ -56,6 +56,8 @@ def fake_google(monkeypatch):
     def matrix(nodes, mode, departure_iso=None):
         return {a["id"]: {b["id"]: 10 for b in nodes if b["id"] != a["id"]} for a in nodes}
     monkeypatch.setattr(google_client, "route_matrix", matrix)
+    monkeypatch.setattr(google_client, "route_polyline",
+                        lambda a, b, mode, departure_iso=None: f"{a['id']}->{b['id']}")
 
 
 @pytest.fixture
@@ -247,7 +249,7 @@ def test_restaurant_hours_unchanged_without_meal_windows(captured):
     assert captured["pois"][0]["opening_hours"] == {"2026-11-14": [[660, 1320]]}
 
 
-def test_response_v02_fields(captured):
+def test_response_v02_fields_and_leg_order(captured):
     body = gen([{"place_id": "ROM", "priority": 8}, {"place_id": "CNT", "priority": 6},
                 {"place_id": "NOH", "priority": 5}, {"place_id": "NOL", "priority": 5}]).json()
     day = body["days"][0]
@@ -256,12 +258,30 @@ def test_response_v02_fields(captured):
     # fake optimizer omits arrival/wait: backend fills them per the contract
     assert rom["arrival"] == 540 + 10 and rom["wait_minutes"] == 600 - 550
     assert cnt["arrival"] == 720 + 10 and cnt["wait_minutes"] == 730 - 730
-    # polylines are not fetched yet: fields present, null -> map draws straight lines
-    assert rom["route_polyline_before"] is None and cnt["route_polyline_before"] is None
-    assert day["return_route_polyline"] is None
+    # accommodation -> ROM -> CNT -> accommodation
+    assert rom["route_polyline_before"] == "accommodation->ROM"
+    assert cnt["route_polyline_before"] == "ROM->CNT"
+    assert day["return_route_polyline"] == "CNT->accommodation"
     unsched = {u["poi_id"]: u for u in body["unscheduled"]}
     assert unsched["NOH"]["lat"] == 43.64                    # location known -> lat/lng
     assert "lat" not in unsched["NOL"] and unsched["NOL"]["reason"] == "unreachable"
+
+
+def test_failed_polyline_is_null(monkeypatch, captured):
+    monkeypatch.setattr(google_client, "route_polyline",
+                        lambda a, b, mode, departure_iso=None: None if b["id"] == "CNT" else "ok")
+    day = gen([{"place_id": "ROM", "priority": 8}, {"place_id": "CNT", "priority": 6}]).json()["days"][0]
+    assert [a["route_polyline_before"] for a in day["activities"]] == ["ok", None]
+    assert day["return_route_polyline"] == "ok"
+
+
+def test_polylines_disabled(monkeypatch, captured):
+    calls = []
+    monkeypatch.setattr(config, "ROUTE_POLYLINES", False)
+    monkeypatch.setattr(google_client, "route_polyline", lambda *a, **k: calls.append(a))
+    day = gen([{"place_id": "ROM", "priority": 8}]).json()["days"][0]
+    assert day["activities"][0]["route_polyline_before"] is None and day["return_route_polyline"] is None
+    assert calls == []
 
 
 def test_optimizer_v02_fields_pass_through(monkeypatch):
@@ -274,6 +294,34 @@ def test_optimizer_v02_fields_pass_through(monkeypatch):
     day = gen([{"place_id": "ROM", "priority": 8}]).json()["days"][0]
     act = day["activities"][0]
     assert (act["arrival"], act["wait_minutes"], day["slack_minutes"]) == (558, 42, 99)
+
+
+def test_route_polyline_never_raises(monkeypatch):
+    monkeypatch.undo()
+    monkeypatch.setattr(config, "GOOGLE_MAPS_API_KEY", "test-key")
+    a, b = {"id": "accommodation", "lat": 43.6, "lng": -79.3}, {"id": "ROM", "lat": 0, "lng": 0}
+
+    class Resp:
+        def __init__(self, code, data): self.status_code, self._data = code, data
+        def json(self): return self._data
+    sent = []
+
+    def fake_request(method, url, field_mask, **kw):
+        sent.append(kw["json"])
+        return responses.pop(0)
+    monkeypatch.setattr(google_client, "_request", fake_request)
+    responses = [Resp(200, {"routes": [{"polyline": {"encodedPolyline": "abc"}}]}),
+                 Resp(403, {}), Resp(200, {})]
+    assert google_client.route_polyline(a, b, "walk") == "abc"
+    assert sent[0]["origin"] == {"location": {"latLng": {"latitude": 43.6, "longitude": -79.3}}}
+    assert sent[0]["destination"] == {"placeId": "ROM"} and sent[0]["travelMode"] == "WALK"
+    assert google_client.route_polyline(a, b, "walk") is None   # HTTP error
+    assert google_client.route_polyline(a, b, "walk") is None   # no route
+
+    def down(*args, **kw):
+        raise GoogleAPIError("google_unavailable", "down")
+    monkeypatch.setattr(google_client, "_request", down)
+    assert google_client.route_polyline(a, b, "transit", "2030-01-01T09:00:00-05:00") is None
 
 
 # ---------------------------------------------------------------- converters

@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Query
 
-from . import converters, google_client, optimizer_bridge
+from . import config, converters, google_client, optimizer_bridge
 from .errors import APIError
 from .google_client import ACCOMMODATION_ID
 from .schemas import GenerateRequest, PlaceSearchResult
@@ -29,14 +29,22 @@ def search_places(
     ]
 
 
-def _transit_departure(trip: dict) -> str | None:
-    """Transit times depend on departure time: use day 1 at day_start (if in the future)."""
+def _departure_iso(trip: dict, day: str, minute: int) -> str | None:
+    """Departure time for transit routing (in the city's time zone), if it is in the future.
+
+    Google only accepts future departure times for transit; otherwise it uses "now".
+    """
     if trip["transport_mode"] != "transit":
         return None
     tz = ZoneInfo(trip["timezone"])
-    h, m = divmod(trip["day_start"], 60)
-    dt = datetime.fromisoformat(f"{trip['dates'][0]}T{h:02d}:{m:02d}").replace(tzinfo=tz)
+    h, m = divmod(min(max(minute, 0), 1439), 60)
+    dt = datetime.fromisoformat(f"{day}T{h:02d}:{m:02d}").replace(tzinfo=tz)
     return dt.isoformat() if dt > datetime.now(tz) else None
+
+
+def _transit_departure(trip: dict) -> str | None:
+    """Transit times depend on departure time: use day 1 at day_start (if in the future)."""
+    return _departure_iso(trip, trip["dates"][0], trip["day_start"])
 
 
 def _infeasible(unscheduled: list[dict], violations: list[dict]) -> dict:
@@ -61,6 +69,38 @@ def _fill_arrival(day: dict, day_start: int) -> None:
         if "wait_minutes" not in act and "arrival" in act and "start" in act:
             act["wait_minutes"] = act["start"] - act["arrival"]
         prev_end = act.get("end", prev_end)
+
+
+def _add_polylines(trip: dict, days: list[dict], nodes: dict[str, dict]) -> None:
+    """route_polyline_before on each activity, return_route_polyline on each day.
+
+    One Routes call per leg of the final itinerary: accommodation -> A1 -> ... -> An -> accommodation.
+    A failed call (or ROUTE_POLYLINES=0) leaves the field null.
+    """
+    legs = []  # (target dict, key, origin node, destination node, date, departure minute)
+    for day in days:
+        prev, prev_end = nodes[ACCOMMODATION_ID], trip["day_start"]
+        for act in day.get("activities", []):
+            act["route_polyline_before"] = None
+            node = nodes.get(act.get("poi_id"))
+            if node:
+                leave = act.get("arrival", prev_end + act.get("travel_minutes_before", 0)) \
+                    - act.get("travel_minutes_before", 0)
+                legs.append((act, "route_polyline_before", prev, node, day["date"], leave))
+            prev, prev_end = node or prev, act.get("end", prev_end)
+        day["return_route_polyline"] = None
+        if day.get("activities") and prev["id"] != ACCOMMODATION_ID:
+            legs.append((day, "return_route_polyline", prev, nodes[ACCOMMODATION_ID], day["date"], prev_end))
+
+    if not config.ROUTE_POLYLINES or not legs:
+        return
+    mode = trip["transport_mode"]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        polylines = list(pool.map(
+            lambda leg: google_client.route_polyline(leg[2], leg[3], mode, _departure_iso(trip, leg[4], leg[5])),
+            legs))
+    for (target, key, *_), poly in zip(legs, polylines):
+        target[key] = poly
 
 
 @router.post("/itineraries/generate")
@@ -120,12 +160,12 @@ def generate_itinerary(req: GenerateRequest):
     days = result.get("days") or []
     for day in days:
         _fill_arrival(day, trip["day_start"])
-        day.setdefault("return_route_polyline", None)  # polylines not fetched yet -> straight lines
         for act in day.get("activities", []):
             act.setdefault("name", names.get(act.get("poi_id"), ""))
             for k, v in locations.get(act.get("poi_id"), {}).items():
                 act.setdefault(k, v)
-            act.setdefault("route_polyline_before", None)
+    if result.get("status") == "ok":
+        _add_polylines(trip, days, {n["id"]: n for n in nodes})
 
     unscheduled = list(result.get("unscheduled") or [])
     for u in unscheduled:
